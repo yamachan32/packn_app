@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "550720671500",
+    "project_id": "packn-9fecd",
+    "storage_bucket": "packn-9fecd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:550720671500:android:dc585271921dabb1894329",
+        "android_client_info": {
+          "package_name": "com.example.packn_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDtuDSbzEuowSi5TAM6YT9qrtBEQ-uV1Q4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -19,6 +19,11 @@ dependencies:
   # UIやユーティリティ
   cupertino_icons: ^1.0.2
 
+  intl: ^0.18.1  # ← この行を追加
+
+  image_picker: ^1.1.0
+  firebase_storage: ^11.6.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -31,3 +36,4 @@ flutter:
 
   assets:
     - assets/images/logo.jpg
+    - assets/icons/

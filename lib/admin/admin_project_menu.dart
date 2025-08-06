@@ -1,43 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'admin_account_add.dart';
-import 'admin_account_edit.dart';
 
-class AdminAccountMenu extends StatelessWidget {
-  const AdminAccountMenu({super.key});
+import 'admin_project_add.dart';
+import 'admin_project_edit.dart';
 
-  void _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    if (context.mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
+class AdminProjectMenu extends StatelessWidget {
+  const AdminProjectMenu({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        // ← 戻るボタンを表示
         backgroundColor: Colors.amber,
-        title: const Text(
-          'アカウント管理',
-          style: TextStyle(
-            color: Colors.white,
-            overflow: TextOverflow.ellipsis,
-          ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () => _logout(context),
-          ),
-        ],
+        title: const Text(
+          'プロジェクト管理',
+          style: TextStyle(color: Colors.white),
+        ),
       ),
       body: Column(
         children: [
-          // ヘッダー
           Container(
             color: Colors.grey.shade200,
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -45,11 +31,10 @@ class AdminAccountMenu extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'アカウント一覧',
+                  'プロジェクト一覧',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 IconButton(
@@ -57,44 +42,34 @@ class AdminAccountMenu extends StatelessWidget {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const AdminAccountAdd()),
+                      MaterialPageRoute(builder: (_) => const AdminProjectAdd()),
                     );
                   },
                 ),
               ],
             ),
           ),
-
           const Divider(height: 1),
 
-          // アカウント一覧表示
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('users').snapshots(),
+              stream: FirebaseFirestore.instance.collection('projects').snapshots(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-                final users = snapshot.data!.docs;
+                final projects = snapshot.data!.docs;
 
                 return ListView.separated(
-                  itemCount: users.length,
+                  itemCount: projects.length,
                   separatorBuilder: (_, __) => const Divider(),
                   itemBuilder: (context, index) {
-                    final user = users[index];
-                    final data = user.data() as Map<String, dynamic>;
-                    final role = data['role'] == 'admin' ? '管理者' : 'ユーザ';
-                    final name = data['name'] ?? '';
-                    final email = data['email'] ?? '';
-                    final uid = user.id;
+                    final project = projects[index];
+                    final data = project.data() as Map<String, dynamic>;
+                    final projectName = data['name'] ?? '';
+                    final docId = project.id;
 
                     return ListTile(
-                      title: Row(
-                        children: [
-                          Text('$role　'),
-                          Text(name),
-                        ],
-                      ),
-                      subtitle: Text(email),
+                      title: Text(projectName),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -104,10 +79,9 @@ class AdminAccountMenu extends StatelessWidget {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => AdminAccountEdit(
-                                    uid: uid,
-                                    currentName: name,
-                                    currentRole: data['role'] ?? 'user',
+                                  builder: (_) => AdminProjectEdit(
+                                    projectId: docId,
+                                    currentName: projectName,
                                   ),
                                 ),
                               );
@@ -116,7 +90,30 @@ class AdminAccountMenu extends StatelessWidget {
                           IconButton(
                             icon: const Icon(Icons.delete, size: 24),
                             onPressed: () async {
-                              await FirebaseFirestore.instance.collection('users').doc(uid).delete();
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('確認'),
+                                  content: const Text('このプロジェクトを削除しますか？'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, false),
+                                      child: const Text('キャンセル'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, true),
+                                      child: const Text('削除'),
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              if (confirm == true) {
+                                await FirebaseFirestore.instance
+                                    .collection('projects')
+                                    .doc(docId)
+                                    .delete();
+                              }
                             },
                           ),
                         ],

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../admin/admin_home.dart'; // 管理者画面のルート
+
+import '../admin/admin_home.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -12,20 +13,52 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String? _userRole;
+  bool _checkingUser = true;
 
   @override
   void initState() {
     super.initState();
-    _loadUserRole();
+    _loadUserInfo();
   }
 
-  Future<void> _loadUserRole() async {
+  Future<void> _loadUserInfo() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+
     if (uid != null) {
       final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final data = doc.data();
+
+      if (!doc.exists) {
+        // Firestore にユーザが存在しない → ログアウト + 警告表示
+        await FirebaseAuth.instance.signOut();
+
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            title: const Text('アカウント無効'),
+            content: const Text('このアカウントは削除されています。\n管理者にお問い合わせください。'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context)
+                    ..pop()
+                    ..pushReplacementNamed('/login');
+                },
+                child: const Text('ログイン画面に戻る'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        setState(() {
+          _userRole = doc.data()?['role'];
+          _checkingUser = false;
+        });
+      }
+    } else {
       setState(() {
-        _userRole = data?['role'];
+        _checkingUser = false;
       });
     }
   }
@@ -38,23 +71,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_checkingUser) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('ホーム'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
+          )
+        ],
       ),
       drawer: Drawer(
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
             const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.amber),
+              decoration: BoxDecoration(color: Colors.blue),
               child: Text(
                 'メニュー',
                 style: TextStyle(fontSize: 20, color: Colors.white),
               ),
             ),
-
             ListTile(
+              leading: const Icon(Icons.swap_horiz),
               title: const Text('プロジェクトを切り替え'),
               onTap: () {
                 Navigator.pop(context);
@@ -63,9 +108,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
-
             if (_userRole == 'admin')
               ListTile(
+                leading: const Icon(Icons.admin_panel_settings),
                 title: const Text('管理者メニュー'),
                 onTap: () {
                   Navigator.pop(context);
@@ -75,16 +120,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 },
               ),
-
-            ListTile(
-              title: const Text('ログアウト'),
-              onTap: _logout,
-            ),
           ],
         ),
       ),
       body: const Center(
-        child: Text('ようこそ！ショートカット一覧がここに表示されます。'),
+        child: Text('ようこそ、Packnへ！'),
       ),
     );
   }

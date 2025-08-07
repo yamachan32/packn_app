@@ -1,12 +1,10 @@
-// home_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/user_provider.dart';
 import '../admin/admin_home.dart';
-import '../widgets/notice_dialog.dart';
+import '../screens/notice_list_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -98,13 +96,13 @@ class _HomeScreenState extends State<HomeScreen> {
             const Divider(),
             if (userProvider.role == 'admin')
               ListTile(
+                title: const Text('管理者メニュー'),
                 leading: const Icon(Icons.admin_panel_settings),
-                title: const Text('管理者メニューへ'),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const AdminHome()), // ← 修正ここ！
+                    MaterialPageRoute(builder: (_) => const AdminHome()),
                   );
                 },
               ),
@@ -122,7 +120,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.notifications),
-            onPressed: () => showNoticeDialog(context, _selectedProjectId),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NoticeListScreen()),
+              );
+            },
           ),
         ],
       ),
@@ -130,8 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           Row(
-            children: [
-              const Text('プロジェクトショートカット集',
+            children: const [
+              Text('プロジェクトショートカット集',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),

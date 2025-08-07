@@ -7,13 +7,8 @@ class UserProvider extends ChangeNotifier {
   String? email;
   String? role;
   List<String> assignedProjects = [];
+  Map<String, String> projectNames = {};
   bool isLoading = true;
-
-  /// ✅ userId getter を追加
-  String? get userId => uid;
-
-  /// ✅ role getter（null安全対策済み）
-  String get safeRole => role ?? 'user';
 
   Future<void> loadUserData() async {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -23,6 +18,7 @@ class UserProvider extends ChangeNotifier {
     email = currentUser.email;
 
     try {
+      // ユーザー情報を取得
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
@@ -35,21 +31,33 @@ class UserProvider extends ChangeNotifier {
         final data = userDoc.data();
         role = data?['role'] ?? 'user';
 
-        // メンバーに含まれるプロジェクトID取得
+        // メンバーとして含まれるプロジェクトを取得
         final query = await FirebaseFirestore.instance
             .collection('projects')
             .where('members', arrayContains: email)
             .get();
 
         assignedProjects = query.docs.map((doc) => doc.id).toList();
+
+        // プロジェクトIDからプロジェクト名のマップを作成
+        projectNames = {
+          for (var doc in query.docs)
+            doc.id: doc.data()['name'] ?? doc.id,
+        };
       }
     } catch (e) {
       role = null;
       assignedProjects = [];
+      projectNames = {};
     }
 
     isLoading = false;
     notifyListeners();
+  }
+
+  /// プロジェクトIDからプロジェクト名を取得
+  String? getProjectName(String projectId) {
+    return projectNames[projectId];
   }
 
   void logout() {
@@ -57,6 +65,7 @@ class UserProvider extends ChangeNotifier {
     email = null;
     role = null;
     assignedProjects = [];
+    projectNames = {};
     isLoading = false;
     notifyListeners();
   }

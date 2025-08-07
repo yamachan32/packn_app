@@ -1,3 +1,5 @@
+// home_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
@@ -92,7 +94,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   _selectedProjectName = _projectIdNameMap[id];
                 });
               },
-            ))
+            )),
+            const Divider(),
+            if (userProvider.role == 'admin')
+              ListTile(
+                leading: const Icon(Icons.admin_panel_settings),
+                title: const Text('管理者メニューへ'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminHome()), // ← 修正ここ！
+                  );
+                },
+              ),
           ],
         ),
       ),

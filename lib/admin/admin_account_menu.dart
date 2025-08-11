@@ -1,134 +1,171 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'admin_account_add.dart';
-import 'admin_account_edit.dart';
+import 'package:provider/provider.dart';
 
-class AdminAccountMenu extends StatelessWidget {
+import 'package:packn_app/providers/accounts_provider.dart';
+import 'admin_account_editor.dart';
+
+class AdminAccountMenu extends StatefulWidget {
   const AdminAccountMenu({super.key});
 
-  void _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    if (context.mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
+  @override
+  State<AdminAccountMenu> createState() => _AdminAccountMenuState();
+}
+
+class _AdminAccountMenuState extends State<AdminAccountMenu> {
+  bool _bound = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_bound) {
+      _bound = true;
+      context.read<AccountsProvider>().bind();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<AccountsProvider>();
+    final items = provider.accounts;
+
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        // ← 戻るボタンを表示
         backgroundColor: Colors.amber,
-        title: const Text(
-          'アカウント管理',
-          style: TextStyle(
-            color: Colors.white,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
+        title: const Text('アカウント一覧', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () => _logout(context),
+            tooltip: '新規作成',
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdminAccountEditor()),
+              );
+            },
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // ヘッダー
-          Container(
-            color: Colors.grey.shade200,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: provider.loading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: FractionallySizedBox(
+            widthFactor: 0.94,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'アカウント一覧',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle, size: 32),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AdminAccountAdd()),
+                const _Label('アカウント一覧'),
+                const _Underline(),
+                const SizedBox(height: 6),
+
+                // 背景カードなし。薄い区切り線のみ。
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(height: 1, color: Colors.grey.shade300),
+                  itemBuilder: (_, i) {
+                    final u = items[i];
+                    final id = (u['id'] ?? '').toString();
+                    final email = (u['email'] ?? '').toString();
+                    final name = (u['name'] ?? '').toString();
+                    final role = (u['role'] ?? '').toString();
+
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+                      title: Text(name.isEmpty ? email : name),
+                      subtitle: Text(email),
+                      leading: Text(
+                        role == 'admin' ? '管理者' : 'ユーザ',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: '編集',
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AdminAccountEditor(initial: u),
+                                ),
+                              );
+                            },
+                          ),
+                          IconButton(
+                            tooltip: '削除',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              final ok = await showDialog<bool>(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text('削除確認'),
+                                  content: Text('「$email」を削除します。よろしいですか？'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, false),
+                                      child: const Text('キャンセル'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context, true),
+                                      child: const Text('削除'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (!mounted) return;
+                              if (ok == true) {
+                                await context.read<AccountsProvider>().delete(id);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AdminAccountEditor(initial: u),
+                          ),
+                        );
+                      },
                     );
                   },
                 ),
               ],
             ),
           ),
-
-          const Divider(height: 1),
-
-          // アカウント一覧表示
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('users').snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-
-                final users = snapshot.data!.docs;
-
-                return ListView.separated(
-                  itemCount: users.length,
-                  separatorBuilder: (_, __) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final user = users[index];
-                    final data = user.data() as Map<String, dynamic>;
-                    final role = data['role'] == 'admin' ? '管理者' : 'ユーザ';
-                    final name = data['name'] ?? '';
-                    final email = data['email'] ?? '';
-                    final uid = user.id;
-
-                    return ListTile(
-                      title: Row(
-                        children: [
-                          Text('$role　'),
-                          Text(name),
-                        ],
-                      ),
-                      subtitle: Text(email),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit, size: 24),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => AdminAccountEdit(
-                                    uid: uid,
-                                    currentName: name,
-                                    currentRole: data['role'] ?? 'user',
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, size: 24),
-                            onPressed: () async {
-                              await FirebaseFirestore.instance.collection('users').doc(uid).delete();
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+class _Label extends StatelessWidget {
+  final String text;
+  const _Label(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(text, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700));
+  }
+}
+
+class _Underline extends StatelessWidget {
+  const _Underline();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(width: 60, height: 4, color: Colors.amber),
+        Expanded(child: Container(height: 4, color: Colors.black54)),
+      ],
     );
   }
 }

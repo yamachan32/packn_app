@@ -1,53 +1,93 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../providers/user_provider.dart';
-import '../providers/selected_project_provider.dart';
 import '../admin/admin_home.dart';
 import '../screens/notice_list_screen.dart';
-import '../screens/add_userlink_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
-  /// URLの正規化：スキームが無ければ https:// を付ける
-  Uri _normalizeUrl(String raw) {
-    var t = raw.trim();
-    if (t.isEmpty) t = 'about:blank';
-    // スキームが無ければ https を補完
-    if (!t.contains('://')) t = 'https://$t';
-    // 空白等が混ざっても飛べるように、encode は launchUrl 内部に任せる
-    return Uri.parse(t);
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  String? _selectedProjectId;
+  String? _selectedProjectName;
+  Map<String, String> _projectIdNameMap = {};
+  bool _argsChecked = false; // 引数チェックを一度だけ行う
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final userProvider = Provider.of<UserProvider>(context);
+    if (userProvider.assignedProjects.isNotEmpty && _selectedProjectId == null) {
+      _fetchProjectNames(userProvider);
+    }
   }
 
-  Future<void> _launchURL(BuildContext context, String raw) async {
-    final uri = _normalizeUrl(raw);
-    try {
-      // 直接 launchUrl。戻り値が false の場合のみエラーメッセージ
-      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('URLを開けません')));
+  Future<void> _fetchProjectNames(UserProvider userProvider) async {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('projects')
+        .where(FieldPath.documentId, whereIn: userProvider.assignedProjects)
+        .get();
+
+    final Map<String, String> idNameMap = {
+      for (var doc in snapshot.docs) doc.id: (doc.data()['name'] ?? doc.id).toString()
+    };
+
+    // 引数の projectId を優先（ユーザがアサインされている場合のみ）
+    String? initialId;
+    if (!_argsChecked) {
+      _argsChecked = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map && args['projectId'] is String) {
+        final argId = args['projectId'] as String;
+        if (userProvider.assignedProjects.contains(argId)) {
+          initialId = argId;
+        }
       }
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('URLを開けません: $e')));
+    }
+
+    setState(() {
+      _projectIdNameMap = idNameMap;
+      _selectedProjectId = initialId ?? userProvider.assignedProjects.first;
+      _selectedProjectName = idNameMap[_selectedProjectId];
+    });
+  }
+
+  void _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/login');
+  }
+
+  Future<void> _launchURL(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('URLを開けません')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<UserProvider>();
-    final selectedProjectId = context.watch<SelectedProjectProvider>().id;
+    final userProvider = Provider.of<UserProvider>(context);
 
-    if (user.isLoading || selectedProjectId == null) {
+    if (userProvider.isLoading || _selectedProjectId == null) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
+
+    final assigned = userProvider.assignedProjects;
 
     return Scaffold(
       drawer: Drawer(
@@ -56,22 +96,20 @@ class HomeScreen extends StatelessWidget {
           children: [
             const DrawerHeader(
               decoration: BoxDecoration(color: Colors.lightBlueAccent),
-              child: Text(
-                'プロジェクト選択',
-                style: TextStyle(fontSize: 18, color: Colors.white),
-              ),
+              child: Text('プロジェクト選択', style: TextStyle(fontSize: 18, color: Colors.white)),
             ),
-            ...user.assignedProjects.map(
-                  (id) => ListTile(
-                title: Text(user.getProjectName(id) ?? id),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.read<SelectedProjectProvider>().setId(id);
-                },
-              ),
-            ),
+            ...assigned.map((id) => ListTile(
+              title: Text(_projectIdNameMap[id] ?? id),
+              onTap: () {
+                Navigator.pop(context);
+                setState(() {
+                  _selectedProjectId = id;
+                  _selectedProjectName = _projectIdNameMap[id];
+                });
+              },
+            )),
             const Divider(),
-            if (user.role == 'admin')
+            if (userProvider.role == 'admin')
               ListTile(
                 title: const Text('管理者メニュー'),
                 leading: const Icon(Icons.admin_panel_settings),
@@ -88,12 +126,13 @@ class HomeScreen extends StatelessWidget {
       ),
       appBar: AppBar(
         backgroundColor: Colors.blue,
-        title: Text('# ${user.getProjectName(selectedProjectId) ?? "未選択"}'),
+        title: Text('# ${_selectedProjectName ?? "未選択"}'),
         centerTitle: true,
         actions: [
           IconButton(
+            tooltip: 'ログアウト',
             icon: const Icon(Icons.logout),
-            onPressed: () => context.read<UserProvider>().signOut(),
+            onPressed: _logout,
           ),
           IconButton(
             icon: const Icon(Icons.notifications),
@@ -109,32 +148,26 @@ class HomeScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Row(
-            children: [
-              Text(
-                'プロジェクトショートカット集',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
+          Row(
+            children: const [
+              Text('プロジェクトショートカット集',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),
           const Divider(),
-          // 現在選択中プロジェクトの共通リンク
           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: FirebaseFirestore.instance
                 .collection('projects')
-                .doc(selectedProjectId)
+                .doc(_selectedProjectId)
                 .snapshots(),
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.data?.data() == null) {
                 return const SizedBox(
-                  height: 100,
-                  child: Center(child: CircularProgressIndicator()),
-                );
+                    height: 100, child: Center(child: CircularProgressIndicator()));
               }
 
               final data = snapshot.data!.data()!;
-              final links =
-              List<Map<String, dynamic>>.from(data['links'] ?? []);
+              final links = List<Map<String, dynamic>>.from(data['links'] ?? []);
 
               if (links.isEmpty) {
                 return const Text('登録されたリンクがありません');
@@ -144,18 +177,24 @@ class HomeScreen extends StatelessWidget {
                 spacing: 16,
                 runSpacing: 16,
                 children: links.map((link) {
+                  final iconName = (link['icon'] ?? '').toString();
                   return GestureDetector(
-                    onTap: () => _launchURL(context, (link['url'] ?? '').toString()),
+                    onTap: () => _launchURL(link['url']),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Image.asset(
-                          'assets/icons/${link['icon']}',
-                          width: 48,
-                          height: 48,
-                        ),
+                        if (iconName.isNotEmpty)
+                          Image.asset(
+                            'assets/icons/$iconName',
+                            width: 48,
+                            height: 48,
+                            errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.link, size: 48, color: Colors.blue),
+                          )
+                        else
+                          const Icon(Icons.link, size: 48, color: Colors.blue),
                         const SizedBox(height: 4),
-                        Text((link['label'] ?? '').toString()),
+                        Text(link['label'] ?? ''),
                       ],
                     ),
                   );
@@ -166,10 +205,8 @@ class HomeScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Row(
             children: [
-              const Text(
-                '個人設定ショートカット集',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
+              const Text('個人設定ショートカット集',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(width: 4),
               GestureDetector(
                 onTap: () {
@@ -178,8 +215,7 @@ class HomeScreen extends StatelessWidget {
                     builder: (_) => AlertDialog(
                       title: const Text('ヘルプ'),
                       content: const Text(
-                        '+ AddApps から自分専用のショートカットを追加できます。長押しで削除ができます。',
-                      ),
+                          '+ AddApps から自分専用のショートカットを追加できます。長押しで削除ができます。'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
@@ -194,48 +230,45 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
           const Divider(),
-          // 個人リンク
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: FirebaseFirestore.instance
                 .collection('users')
-                .doc(user.uid)
+                .doc(userProvider.uid)
                 .collection('links')
                 .orderBy('createdAt', descending: true)
                 .snapshots(),
             builder: (context, snapshot) {
               final docs = snapshot.data?.docs ?? [];
+
               return Wrap(
                 spacing: 16,
                 runSpacing: 16,
                 children: [
                   ...docs.map((doc) {
                     final data = doc.data();
-                    final iconName = (data['icon'] ?? '').toString();
-                    final title = (data['title'] ?? '').toString();
-                    final url = (data['url'] ?? '').toString();
+                    final iconName = (data['icon'] ?? 'Icon_Link.png').toString();
 
                     return GestureDetector(
-                      onTap: () => _launchURL(context, url),
+                      onTap: () => _launchURL(data['url']),
                       onLongPress: () async {
-                        final confirm = await showDialog<bool>(
+                        final confirm = await showDialog(
                           context: context,
                           builder: (_) => AlertDialog(
                             title: const Text('削除確認'),
                             content: const Text('このリンクを削除しますか？'),
                             actions: [
                               TextButton(
-                                onPressed: () =>
-                                    Navigator.pop(context, false),
+                                onPressed: () => Navigator.pop(context, false),
                                 child: const Text('キャンセル'),
                               ),
                               TextButton(
-                                onPressed: () =>
-                                    Navigator.pop(context, true),
+                                onPressed: () => Navigator.pop(context, true),
                                 child: const Text('削除'),
                               ),
                             ],
                           ),
                         );
+
                         if (confirm == true) {
                           await doc.reference.delete();
                         }
@@ -243,35 +276,24 @@ class HomeScreen extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          iconName.isNotEmpty
-                              ? Image.asset(
+                          Image.asset(
                             'assets/icons/$iconName',
                             width: 48,
                             height: 48,
-                          )
-                              : const Icon(Icons.folder,
-                              size: 48, color: Colors.blue),
+                            errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.link, size: 48, color: Colors.blue),
+                          ),
                           const SizedBox(height: 4),
-                          Text(title),
+                          Text(data['title'] ?? ''),
                         ],
                       ),
                     );
                   }),
-                  // AddApps：projectId は SelectedProjectProvider から取得して遷移
                   GestureDetector(
-                    onTap: () {
-                      final pid =
-                          context.read<SelectedProjectProvider>().id;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AddUserLinkScreen(projectId: pid),
-                        ),
-                      );
-                    },
-                    child: const Column(
+                    onTap: () => Navigator.pushNamed(context, '/add_userlink'),
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
-                      children: [
+                      children: const [
                         Icon(Icons.add_box, size: 48, color: Colors.grey),
                         SizedBox(height: 4),
                         Text('AddApps'),

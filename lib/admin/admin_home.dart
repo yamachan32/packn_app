@@ -1,144 +1,144 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-import 'admin_account_menu.dart';
-import 'admin_project_menu.dart';
+import 'package:packn_app/providers/projects_provider.dart' as pp;
+
 import 'admin_notice_menu.dart';
+import 'admin_project_menu.dart';
+import 'admin_account_menu.dart';
 
-class AdminHome extends StatelessWidget {
+class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
 
-  void _openDrawer(BuildContext context) {
-    Scaffold.of(context).openDrawer();
+  @override
+  State<AdminHome> createState() => _AdminHomeState();
+}
+
+class _AdminHomeState extends State<AdminHome> {
+  bool _bound = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_bound) {
+      _bound = true;
+      context.read<pp.ProjectsProvider>().bind();
+    }
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final projects = context.watch<pp.ProjectsProvider>().projects;
+
     return Scaffold(
       drawer: Drawer(
-        child: SafeArea(
-          child: Column(
-            children: [
-              const DrawerHeader(
-                child: Text('プロジェクト切り替え', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ),
-              Expanded(
-                child: StreamBuilder(
-                  stream: FirebaseFirestore.instance.collection('projects').snapshots(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    final projects = snapshot.data!.docs;
-
-                    return ListView.builder(
-                      itemCount: projects.length,
-                      itemBuilder: (context, index) {
-                        final name = projects[index]['name'] ?? '無名プロジェクト';
-                        return ListTile(
-                          title: Text(name),
-                          onTap: () {
-                            Navigator.pop(context); // ドロワーを閉じる
-                            // 必要なら状態管理して選択プロジェクトを保持
-                          },
-                        );
-                      },
-                    );
-                  },
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            // ヘッダー：薄い黄色
+            DrawerHeader(
+              decoration: BoxDecoration(color: Colors.amber.shade100),
+              child: const Align(
+                alignment: Alignment.bottomLeft,
+                child: Text(
+                  '管理メニュー',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
-            ],
-          ),
+            ),
+
+            // プロジェクトへ移動（ユーザホーム）
+            const ListTile(
+              title: Text('プロジェクトに移動', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            ...projects.map((p) {
+              final id = (p['id'] ?? '').toString();
+              final name = (p['name'] ?? '').toString();
+              return ListTile(
+                leading: const Icon(Icons.folder_open),
+                title: Text(name.isEmpty ? id : name),
+                onTap: () {
+                  Navigator.pop(context); // Drawer を閉じる
+                  // ユーザホームへ。選択したPJを arguments で渡す
+                  Navigator.pushNamed(context, '/home', arguments: {'projectId': id});
+                },
+              );
+            }),
+
+            const Divider(),
+
+            // ★ 管理メニューは左メニューに出さない（ここには置かない）
+          ],
         ),
       ),
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Builder(
-          builder: (context) => Column(
+      appBar: AppBar(
+        backgroundColor: Colors.amber,
+        title: const Text('管理者ホーム', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'ログアウト',
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
+          ),
+        ],
+      ),
+      body: Center(
+        child: FractionallySizedBox(
+          widthFactor: 0.94,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ヘッダー
-              Container(
-                color: Colors.amber,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => _openDrawer(context),
-                      icon: const Icon(Icons.menu, color: Colors.white),
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Packn Admin',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      icon: const Icon(Icons.logout, color: Colors.white),
-                    )
-                  ],
+              const SizedBox(height: 16),
+              const Text('管理メニュー', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+              Row(
+                children: [
+                  Container(width: 60, height: 4, color: Colors.amber),
+                  Expanded(child: Container(height: 4, color: Colors.black54)),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // ★ ボディにボタンを並べる
+              _menuButton(
+                context,
+                label: 'アカウント管理',
+                icon: Icons.manage_accounts_outlined,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminAccountMenu()),
                 ),
               ),
 
               const SizedBox(height: 12),
-
-              const Text(
-                '管理者ホーム',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              _menuButton(
+                context,
+                label: 'プロジェクト管理',
+                icon: Icons.work_outline,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminProjectMenu()),
+                ),
               ),
-
-              const SizedBox(height: 24),
-
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('管理者メニュー', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(height: 4, width: 40, color: Colors.amber),
-                        const Expanded(child: Divider(color: Colors.grey, thickness: 2)),
-                      ],
-                    ),
-                  ],
+              const SizedBox(height: 12),
+              _menuButton(
+                context,
+                label: 'お知らせ管理',
+                icon: Icons.campaign_outlined,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminNoticeMenu()),
                 ),
               ),
 
-              const SizedBox(height: 24),
-
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
-                    _buildMenuButton(
-                      label: 'アカウント管理',
-                      onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminAccountMenu()));
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _buildMenuButton(
-                      label: 'プロジェクト管理',
-                      onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminProjectMenu()));
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _buildMenuButton(
-                      label: 'お知らせ管理',
-                      onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminNoticeMenu()));
-                      },
-                    ),
-                  ],
-                ),
-              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -146,21 +146,24 @@ class AdminHome extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuButton({
-    required String label,
-    required VoidCallback onPressed,
-  }) {
+  Widget _menuButton(
+      BuildContext context, {
+        required String label,
+        required IconData icon,
+        required VoidCallback onTap,
+      }) {
     return SizedBox(
       width: double.infinity,
-      height: 48,
-      child: ElevatedButton(
+      height: 56,
+      child: ElevatedButton.icon(
+        icon: Icon(icon),
+        label: Text(label),
+        onPressed: onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.amber,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          foregroundColor: Colors.black,
+          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
-        onPressed: onPressed,
-        child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
       ),
     );
   }

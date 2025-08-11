@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-import 'providers/user_provider.dart';
-import 'providers/selected_project_provider.dart';
-import 'providers/notice_provider.dart';
-import 'providers/projects_provider.dart';          // ★ 追加
-import 'gates/auth_gate.dart';
+// Providers
+import 'package:packn_app/providers/user_provider.dart';
+import 'package:packn_app/providers/selected_project_provider.dart';
+import 'package:packn_app/providers/notice_provider.dart';
+import 'package:packn_app/providers/projects_provider.dart';
+import 'package:packn_app/providers/admin_notices_provider.dart';
+import 'package:packn_app/providers/accounts_provider.dart'; // ★ 追加
 
-// 画面
-import 'screens/login_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/add_userlink_screen.dart';
+// Gates / Screens
+import 'package:packn_app/gates/auth_gate.dart';
+import 'package:packn_app/screens/login_screen.dart';
+import 'package:packn_app/screens/home_screen.dart';
+import 'package:packn_app/screens/add_userlink_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +32,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => SelectedProjectProvider()),
         ChangeNotifierProvider(create: (_) => NoticeProvider()),
-        ChangeNotifierProvider(create: (_) => ProjectsProvider()), // ★
+        ChangeNotifierProvider(create: (_) => ProjectsProvider()),
+        ChangeNotifierProvider(create: (_) => AdminNoticesProvider()),
+        ChangeNotifierProvider(create: (_) => AccountsProvider()), // ★ 追加
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,

@@ -1,131 +1,181 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 
-import 'admin_project_add.dart';
-import 'admin_project_edit.dart';
+import '../providers/projects_provider.dart';
+import 'admin_project_editor.dart';
 
-class AdminProjectMenu extends StatelessWidget {
+class AdminProjectMenu extends StatefulWidget {
   const AdminProjectMenu({super.key});
 
   @override
+  State<AdminProjectMenu> createState() => _AdminProjectMenuState();
+}
+
+class _AdminProjectMenuState extends State<AdminProjectMenu> {
+  bool _bound = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_bound) {
+      _bound = true;
+      context.read<ProjectsProvider>().bind();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final pp = context.watch<ProjectsProvider>();
+
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.amber,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'プロジェクト管理',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('プロジェクト管理', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
       ),
-      body: Column(
-        children: [
-          Container(
-            color: Colors.grey.shade200,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: pp.loading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: FractionallySizedBox(
+            widthFactor: 0.94, // 少し狭め
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'プロジェクト一覧',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                // セクション見出し（＋）
+                Row(
+                  children: [
+                    const _SectionTitle('プロジェクト一覧'),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const AdminProjectEditor()),
+                        );
+                      },
+                      icon: const Icon(Icons.add_circle_outline),
+                      tooltip: 'プロジェクトを追加',
+                    ),
+                  ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle, size: 32),
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const AdminProjectAdd()),
-                    );
-                  },
+                const SizedBox(height: 6),
+
+                // 背景パネル（高さは内容ぶんだけ）
+                Container(
+                  decoration: _panelDecoration(),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: pp.projects.length,
+                    separatorBuilder: (_, __) =>
+                        Divider(height: 1, color: Colors.grey.shade300),
+                    itemBuilder: (_, i) {
+                      final p = pp.projects[i];
+                      final id = (p['id'] ?? '').toString();
+                      final name = (p['name'] ?? '').toString();
+
+                      return ListTile(
+                        title: Text(name),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: '編集',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        AdminProjectEditor(projectId: id),
+                                  ),
+                                );
+                              },
+                            ),
+                            IconButton(
+                              tooltip: '削除',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () async {
+                                final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (_) => AlertDialog(
+                                    title: const Text('削除確認'),
+                                    content: Text('「$name」を削除します。よろしいですか？'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(context, false),
+                                        child: const Text('キャンセル'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(context, true),
+                                        child: const Text('削除'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (ok == true) {
+                                  await context
+                                      .read<ProjectsProvider>()
+                                      .deleteProject(id);
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  AdminProjectEditor(projectId: id),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1),
-
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('projects').snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-
-                final projects = snapshot.data!.docs;
-
-                return ListView.separated(
-                  itemCount: projects.length,
-                  separatorBuilder: (_, __) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final project = projects[index];
-                    final data = project.data() as Map<String, dynamic>;
-                    final projectName = data['name'] ?? '';
-                    final docId = project.id;
-
-                    return ListTile(
-                      title: Text(projectName),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit, size: 24),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => AdminProjectEdit(
-                                    projectId: docId,
-                                    currentName: projectName,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, size: 24),
-                            onPressed: () async {
-                              final confirm = await showDialog<bool>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  title: const Text('確認'),
-                                  content: const Text('このプロジェクトを削除しますか？'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, false),
-                                      child: const Text('キャンセル'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, true),
-                                      child: const Text('削除'),
-                                    ),
-                                  ],
-                                ),
-                              );
-
-                              if (confirm == true) {
-                                await FirebaseFirestore.instance
-                                    .collection('projects')
-                                    .doc(docId)
-                                    .delete();
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+        ),
       ),
+    );
+  }
+
+  static BoxDecoration _panelDecoration() => BoxDecoration(
+    color: Colors.grey.shade100,
+    borderRadius: BorderRadius.circular(10),
+    border: Border.all(color: Colors.grey.shade300),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.03),
+        blurRadius: 6,
+        offset: const Offset(0, 2),
+      ),
+    ],
+  );
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String text;
+  const _SectionTitle(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(text,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Container(width: 80, height: 4, color: Colors.amber),
+      ],
     );
   }
 }

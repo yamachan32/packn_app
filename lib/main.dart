@@ -4,20 +4,18 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'providers/user_provider.dart';
 import 'providers/selected_project_provider.dart';
+import 'providers/notice_provider.dart';
+import 'providers/projects_provider.dart';          // ★ 追加
 import 'gates/auth_gate.dart';
 
-// 既存の画面
+// 画面
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/add_userlink_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // firebase_options.dart が無くても動く最小初期化
-  // （android: google-services.json / ios: GoogleService-Info.plist を配置済みであること）
   await Firebase.initializeApp();
-
   runApp(const MyApp());
 }
 
@@ -30,6 +28,8 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => SelectedProjectProvider()),
+        ChangeNotifierProvider(create: (_) => NoticeProvider()),
+        ChangeNotifierProvider(create: (_) => ProjectsProvider()), // ★
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -38,17 +38,7 @@ class MyApp extends StatelessWidget {
         routes: {
           '/login': (_) => const LoginScreen(),
           '/home': (_) => const HomeScreen(),
-          // ルート経由の遷移時にも projectId を安全に注入
-          '/add_userlink': (context) {
-            final pid = context.read<SelectedProjectProvider>().id;
-            if (pid == null || pid.isEmpty) {
-              // 非選択時は簡易ガード（必要に応じて Home に戻す等でもOK）
-              return const Scaffold(
-                body: Center(child: Text('プロジェクトが未選択です。')),
-              );
-            }
-            return AddUserLinkScreen(projectId: pid);
-          },
+          '/add_userlink': (_) => const AddUserLinkScreen(),
         },
       ),
     );

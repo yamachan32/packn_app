@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 
+/// リンクの追加/編集ダイアログ。
+/// - initial を渡すと編集モード（フィールド初期化・ボタン文言が「保存」に）
+/// 返り値: { 'label': String, 'url': String, 'icon': String }
 class AdminLinkAdd extends StatefulWidget {
-  const AdminLinkAdd({super.key});
+  final Map<String, String>? initial;
+  const AdminLinkAdd({super.key, this.initial});
 
   @override
   State<AdminLinkAdd> createState() => _AdminLinkAddState();
 }
 
 class _AdminLinkAddState extends State<AdminLinkAdd> {
-  final TextEditingController _labelController = TextEditingController();
-  final TextEditingController _urlController = TextEditingController();
-
+  late final TextEditingController _labelController;
+  late final TextEditingController _urlController;
   String? _selectedIcon;
 
-  final List<String> iconList = [
+  final List<String> iconList = const [
     'Icon_GoogleChrome.png',
     'Icon_GoogleCalendar.png',
     'Icon_Backlog.png',
@@ -29,9 +32,26 @@ class _AdminLinkAddState extends State<AdminLinkAdd> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _labelController = TextEditingController(text: widget.initial?['label'] ?? '');
+    _urlController = TextEditingController(text: widget.initial?['url'] ?? '');
+    _selectedIcon = widget.initial?['icon'];
+  }
+
+  @override
+  void dispose() {
+    _labelController.dispose();
+    _urlController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isEdit = widget.initial != null;
+
     return AlertDialog(
-      title: const Text('リンク追加'),
+      title: Text(isEdit ? 'リンク編集' : 'リンク追加'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -60,11 +80,7 @@ class _AdminLinkAddState extends State<AdminLinkAdd> {
               children: iconList.map((fileName) {
                 final isSelected = _selectedIcon == fileName;
                 return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      _selectedIcon = fileName;
-                    });
-                  },
+                  onTap: () => setState(() => _selectedIcon = fileName),
                   child: Container(
                     decoration: BoxDecoration(
                       border: Border.all(color: isSelected ? Colors.amber : Colors.grey),
@@ -75,9 +91,7 @@ class _AdminLinkAddState extends State<AdminLinkAdd> {
                       'assets/icons/$fileName',
                       width: 48,
                       height: 48,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(Icons.broken_image, size: 48);
-                      },
+                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 48),
                     ),
                   ),
                 );
@@ -97,14 +111,14 @@ class _AdminLinkAddState extends State<AdminLinkAdd> {
             final url = _urlController.text.trim();
             if (label.isEmpty || url.isEmpty || _selectedIcon == null) return;
 
-            Navigator.pop(context, {
+            Navigator.pop<Map<String, String>>(context, {
               'label': label,
               'url': url,
-              'icon': _selectedIcon,
+              'icon': _selectedIcon!,
             });
           },
           style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-          child: const Text('追加', style: TextStyle(color: Colors.white)),
+          child: Text(isEdit ? '保存' : '追加', style: const TextStyle(color: Colors.white)),
         ),
       ],
     );

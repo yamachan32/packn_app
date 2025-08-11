@@ -1,60 +1,72 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/notice_model.dart';
+
+import '../providers/notice_provider.dart';
 import '../screens/notice_detail_screen.dart';
 
-Future<void> showNoticeDialog(BuildContext context, String? projectId) async {
-  showDialog(
-    context: context,
-    builder: (_) {
-      return AlertDialog(
-        title: const Text('お知らせ'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('notices')
-                .orderBy('createdAt', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+/// Provider ベースのお知らせダイアログ。
+/// Firestore の Notice モデル型に依存せず、Map で扱います。
+class NoticeDialog extends StatelessWidget {
+  const NoticeDialog({super.key});
 
-              final notices = snapshot.data!.docs.map((doc) => Notice.fromDoc(doc)).where((notice) {
-                return notice.projectId == null || notice.projectId == projectId;
-              }).toList();
+  String _formatDate(dynamic ts) {
+    DateTime? dt;
+    if (ts == null) {
+      return '';
+    } else if (ts is DateTime) {
+      dt = ts;
+    } else if (ts is Timestamp) {
+      dt = ts.toDate();
+    } else {
+      return ts.toString();
+    }
+    return '${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')} '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
 
-              return ListView.builder(
-                shrinkWrap: true,
-                itemCount: notices.length,
-                itemBuilder: (context, index) {
-                  final notice = notices[index];
-                  return ListTile(
-                    title: Text(notice.title),
-                    subtitle: Text(notice.createdAt.toDate().toLocal().toString().split(' ')[0]),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => NoticeDetailScreen(notice: notice),
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('閉じる'),
-          ),
-        ],
-      );
-    },
-  );
+  @override
+  Widget build(BuildContext context) {
+    final np = context.watch<NoticeProvider>();
+
+    return AlertDialog(
+      title: const Text('お知らせ'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: np.loading
+            ? const Center(child: CircularProgressIndicator())
+            : (np.notices.isEmpty
+            ? const Text('お知らせはありません')
+            : ListView.separated(
+          shrinkWrap: true,
+          itemCount: np.notices.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (context, i) {
+            final n = np.notices[i];
+            final title = (n['title'] ?? '').toString();
+            final createdAt = n['createdAt'];
+            return ListTile(
+              title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(_formatDate(createdAt)),
+              onTap: () {
+                Navigator.pop(context); // ダイアログを閉じる
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => NoticeDetailScreen(notice: n),
+                  ),
+                );
+              },
+            );
+          },
+        )),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('閉じる'),
+        )
+      ],
+    );
+  }
 }

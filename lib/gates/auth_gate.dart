@@ -1,78 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/user_provider.dart';
-import '../providers/notice_provider.dart';
-import '../providers/selected_project_provider.dart';
 import '../screens/login_screen.dart';
 import '../screens/home_screen.dart';
 
-/// 認証状態ゲート + お知らせ自動購読開始（全体＋参加PJすべて）
-class AuthGate extends StatefulWidget {
+/// ログイン状態に応じて Login / Home を出し分け。
+/// ログイン後は UserProvider.loadUserData() を呼んでユーザ情報をロード。
+class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
   @override
-  State<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<AuthGate> {
-  String? _lastUid;
-  String _lastProjectsKey = '';
-
-  void _maybeBindNotices(BuildContext context) {
-    final user = context.read<UserProvider>();
-    final uid = user.uid;
-    if (uid == null) {
-      return;
-    }
-
-    final projects = List<String>.from(user.assignedProjects);
-    projects.sort();
-    final key = projects.join(',');
-
-    if (_lastUid != uid || _lastProjectsKey != key) {
-      _lastUid = uid;
-      _lastProjectsKey = key;
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        context.read<NoticeProvider>().bindForUser(
-          uid: uid,
-          projectIds: projects,
-          projectNames: Map<String, String>.from(user.projectNames),
-        );
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final user = context.watch<UserProvider>();
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snap) {
+        // 未ログイン
+        if (!snap.hasData) {
+          return const LoginScreen();
+        }
 
-    if (user.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+        // ユーザ情報ロード（何度呼ばれても問題なし）
+        context.read<UserProvider>().loadUserData();
 
-    if (user.uid == null) {
-      _lastUid = null;
-      _lastProjectsKey = '';
-      return const LoginScreen();
-    }
-
-    // Home の表示用に初回の選択PJを入れておく
-    final selected = context.read<SelectedProjectProvider>();
-    if (selected.id == null && user.assignedProjects.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        selected.setId(user.assignedProjects.first);
-      });
-    }
-
-    // 全体＋参加PJのお知らせを常時購読
-    _maybeBindNotices(context);
-
-    return const HomeScreen();
+        // Home 側で UserProvider.isLoading を見て待機描画
+        return const HomeScreen();
+      },
+    );
   }
 }

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 
-import 'package:packn_app/providers/accounts_provider.dart';
+import '../providers/accounts_provider.dart';
 import 'admin_account_editor.dart';
 
 class AdminAccountMenu extends StatefulWidget {
@@ -12,160 +13,127 @@ class AdminAccountMenu extends StatefulWidget {
 }
 
 class _AdminAccountMenuState extends State<AdminAccountMenu> {
-  bool _bound = false;
+  Future<void> _goAdd() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const AdminAccountEditor()),
+    );
+    if (changed == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('アカウントを作成しました')));
+    }
+  }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_bound) {
-      _bound = true;
-      context.read<AccountsProvider>().bind();
+  Future<void> _goEdit(String uid) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AdminAccountEditor(uid: uid)),
+    );
+    if (changed == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('アカウントを更新しました')));
+    }
+  }
+
+  Future<void> _confirmDelete(String uid, String email) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('削除確認'),
+        content: Text('このアカウントを削除しますか？\n$email'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('キャンセル')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('削除')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await context.read<AccountsProvider>().deleteAccount(uid);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('削除しました')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('削除に失敗しました：$e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AccountsProvider>();
-    final items = provider.accounts;
+    final yellow = Colors.amber;
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.amber,
-        title: const Text('アカウント一覧', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: yellow,
+        foregroundColor: Colors.black87,
+        title: const Text('アカウント一覧'),
         centerTitle: true,
         actions: [
           IconButton(
-            tooltip: '新規作成',
+            tooltip: '追加',
+            onPressed: _goAdd,
             icon: const Icon(Icons.add_circle_outline),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AdminAccountEditor()),
-              );
-            },
           ),
         ],
       ),
-      body: provider.loading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Center(
-          child: FractionallySizedBox(
-            widthFactor: 0.94,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _Label('アカウント一覧'),
-                const _Underline(),
-                const SizedBox(height: 6),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: context.read<AccountsProvider>().streamAccounts(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('読み込みに失敗しました：${snapshot.error}'));
+          }
+          final docs = snapshot.data?.docs ?? [];
+          if (docs.isEmpty) {
+            return const Center(child: Text('アカウントがありません'));
+          }
 
-                // 背景カードなし。薄い区切り線のみ。
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: items.length,
-                  separatorBuilder: (_, __) =>
-                      Divider(height: 1, color: Colors.grey.shade300),
-                  itemBuilder: (_, i) {
-                    final u = items[i];
-                    final id = (u['id'] ?? '').toString();
-                    final email = (u['email'] ?? '').toString();
-                    final name = (u['name'] ?? '').toString();
-                    final role = (u['role'] ?? '').toString();
+          return ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: docs.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final d = docs[index];
+              final data = d.data();
+              final uid = d.id;
+              final name = (data['name'] ?? '').toString();
+              final email = (data['email'] ?? '').toString();
+              final role = (data['role'] ?? 'user').toString();
 
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 0),
-                      title: Text(name.isEmpty ? email : name),
-                      subtitle: Text(email),
-                      leading: Text(
-                        role == 'admin' ? '管理者' : 'ユーザ',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: '編集',
-                            icon: const Icon(Icons.edit_outlined),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => AdminAccountEditor(initial: u),
-                                ),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            tooltip: '削除',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () async {
-                              final ok = await showDialog<bool>(
-                                context: context,
-                                builder: (_) => AlertDialog(
-                                  title: const Text('削除確認'),
-                                  content: Text('「$email」を削除します。よろしいですか？'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, false),
-                                      child: const Text('キャンセル'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(context, true),
-                                      child: const Text('削除'),
-                                    ),
-                                  ],
-                                ),
-                              );
-                              if (!mounted) return;
-                              if (ok == true) {
-                                await context.read<AccountsProvider>().delete(id);
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AdminAccountEditor(initial: u),
-                          ),
-                        );
-                      },
-                    );
-                  },
+              return ListTile(
+                title: Text(name.isNotEmpty ? name : email,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(email),
+                leading: Icon(
+                  role == 'admin' ? Icons.admin_panel_settings : Icons.person,
+                  color: role == 'admin' ? Colors.orange : Colors.grey.shade700,
                 ),
-              ],
-            ),
-          ),
-        ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: '編集',
+                      onPressed: () => _goEdit(uid),
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                    IconButton(
+                      tooltip: '削除',
+                      onPressed: () => _confirmDelete(uid, email),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+                onTap: () => _goEdit(uid),
+              );
+            },
+          );
+        },
       ),
-    );
-  }
-}
-
-class _Label extends StatelessWidget {
-  final String text;
-  const _Label(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(text, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700));
-  }
-}
-
-class _Underline extends StatelessWidget {
-  const _Underline();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(width: 60, height: 4, color: Colors.amber),
-        Expanded(child: Container(height: 4, color: Colors.black54)),
-      ],
     );
   }
 }

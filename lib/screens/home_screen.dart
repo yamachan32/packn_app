@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../providers/user_provider.dart';
 import '../admin/admin_home.dart';
 import '../screens/notice_list_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,7 +19,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedProjectId;
   String? _selectedProjectName;
   Map<String, String> _projectIdNameMap = {};
-  bool _argsChecked = false; // 引数チェックを一度だけ行う
 
   @override
   void didChangeDependencies() {
@@ -39,22 +39,9 @@ class _HomeScreenState extends State<HomeScreen> {
       for (var doc in snapshot.docs) doc.id: (doc.data()['name'] ?? doc.id).toString()
     };
 
-    // 引数の projectId を優先（ユーザがアサインされている場合のみ）
-    String? initialId;
-    if (!_argsChecked) {
-      _argsChecked = true;
-      final args = ModalRoute.of(context)?.settings.arguments;
-      if (args is Map && args['projectId'] is String) {
-        final argId = args['projectId'] as String;
-        if (userProvider.assignedProjects.contains(argId)) {
-          initialId = argId;
-        }
-      }
-    }
-
     setState(() {
       _projectIdNameMap = idNameMap;
-      _selectedProjectId = initialId ?? userProvider.assignedProjects.first;
+      _selectedProjectId = userProvider.assignedProjects.first;
       _selectedProjectName = idNameMap[_selectedProjectId];
     });
   }
@@ -62,6 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _logout() async {
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
+    context.read<UserProvider>().logout();
     Navigator.pushReplacementNamed(context, '/login');
   }
 
@@ -94,9 +82,13 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
+            // ★ ヘッダーを元の水色に戻す
             const DrawerHeader(
               decoration: BoxDecoration(color: Colors.lightBlueAccent),
-              child: Text('プロジェクト選択', style: TextStyle(fontSize: 18, color: Colors.white)),
+              child: Text(
+                'プロジェクト選択',
+                style: TextStyle(fontSize: 18, color: Colors.white),
+              ),
             ),
             ...assigned.map((id) => ListTile(
               title: Text(_projectIdNameMap[id] ?? id),
@@ -130,7 +122,6 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            tooltip: 'ログアウト',
             icon: const Icon(Icons.logout),
             onPressed: _logout,
           ),
@@ -148,6 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ===== プロジェクトショートカット（共通）
           Row(
             children: const [
               Text('プロジェクトショートカット集',
@@ -177,24 +169,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 spacing: 16,
                 runSpacing: 16,
                 children: links.map((link) {
-                  final iconName = (link['icon'] ?? '').toString();
                   return GestureDetector(
-                    onTap: () => _launchURL(link['url']),
+                    onTap: () => _launchURL((link['url'] ?? '').toString()),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (iconName.isNotEmpty)
-                          Image.asset(
-                            'assets/icons/$iconName',
-                            width: 48,
-                            height: 48,
-                            errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.link, size: 48, color: Colors.blue),
-                          )
-                        else
-                          const Icon(Icons.link, size: 48, color: Colors.blue),
+                        Image.asset(
+                          'assets/icons/${link['icon']}',
+                          width: 48,
+                          height: 48,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.link, size: 48),
+                        ),
                         const SizedBox(height: 4),
-                        Text(link['label'] ?? ''),
+                        Text((link['label'] ?? '').toString()),
                       ],
                     ),
                   );
@@ -202,7 +189,10 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
+
           const SizedBox(height: 24),
+
+          // ===== 個人ショートカット（プロジェクト紐づけのみ／フォールバック廃止）
           Row(
             children: [
               const Text('個人設定ショートカット集',
@@ -215,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     builder: (_) => AlertDialog(
                       title: const Text('ヘルプ'),
                       content: const Text(
-                          '+ AddApps から自分専用のショートカットを追加できます。長押しで削除ができます。'),
+                          '+ AddApps から「このプロジェクト専用の」ショートカットを追加できます。長押しで削除できます。'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
@@ -230,82 +220,123 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const Divider(),
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .doc(userProvider.uid)
-                .collection('links')
-                .orderBy('createdAt', descending: true)
-                .snapshots(),
-            builder: (context, snapshot) {
-              final docs = snapshot.data?.docs ?? [];
-
-              return Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: [
-                  ...docs.map((doc) {
-                    final data = doc.data();
-                    final iconName = (data['icon'] ?? 'Icon_Link.png').toString();
-
-                    return GestureDetector(
-                      onTap: () => _launchURL(data['url']),
-                      onLongPress: () async {
-                        final confirm = await showDialog(
-                          context: context,
-                          builder: (_) => AlertDialog(
-                            title: const Text('削除確認'),
-                            content: const Text('このリンクを削除しますか？'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('キャンセル'),
-                              ),
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                child: const Text('削除'),
-                              ),
-                            ],
-                          ),
-                        );
-
-                        if (confirm == true) {
-                          await doc.reference.delete();
-                        }
-                      },
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Image.asset(
-                            'assets/icons/$iconName',
-                            width: 48,
-                            height: 48,
-                            errorBuilder: (_, __, ___) =>
-                            const Icon(Icons.link, size: 48, color: Colors.blue),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(data['title'] ?? ''),
-                        ],
-                      ),
-                    );
-                  }),
-                  GestureDetector(
-                    onTap: () => Navigator.pushNamed(context, '/add_userlink'),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.add_box, size: 48, color: Colors.grey),
-                        SizedBox(height: 4),
-                        Text('AddApps'),
-                      ],
-                    ),
-                  ),
-                ],
+          _UserProjectLinksList(
+            key: ValueKey(_selectedProjectId), // ★ プロジェクト切替時に確実にStreamを張り替える
+            uid: userProvider.uid!,
+            projectId: _selectedProjectId!,
+            onOpenUrl: _launchURL,
+            onTapAdd: () {
+              Navigator.pushNamed(
+                context,
+                '/add_userlink',
+                arguments: {
+                  'projectId': _selectedProjectId,
+                  'projectName': _selectedProjectName,
+                },
               );
             },
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 個人ショートカット（プロジェクト配下のみを表示）
+class _UserProjectLinksList extends StatelessWidget {
+  final String uid;
+  final String projectId;
+  final Future<void> Function(String url) onOpenUrl;
+  final VoidCallback onTapAdd;
+
+  const _UserProjectLinksList({
+    super.key,
+    required this.uid,
+    required this.projectId,
+    required this.onOpenUrl,
+    required this.onTapAdd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final query = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('projects')
+        .doc(projectId)
+        .collection('links')
+        .orderBy('createdAt', descending: true);
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: query.snapshots(),
+      builder: (context, snap) {
+        final docs = snap.data?.docs ?? [];
+        return Wrap(
+          spacing: 16,
+          runSpacing: 16,
+          children: [
+            ...docs.map((doc) {
+              final data = doc.data();
+              final iconFile = (data['icon'] ?? '').toString();
+              final title = (data['title'] ?? '').toString();
+              final url = (data['url'] ?? '').toString();
+
+              return GestureDetector(
+                onTap: () => onOpenUrl(url),
+                onLongPress: () async {
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      title: const Text('削除確認'),
+                      content: Text('このリンクを削除しますか？\n$title'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('キャンセル')),
+                        TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('削除')),
+                      ],
+                    ),
+                  );
+                  if (ok == true) {
+                    await doc.reference.delete();
+                  }
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (iconFile.isNotEmpty)
+                      Image.asset(
+                        'assets/icons/$iconFile',
+                        width: 48,
+                        height: 48,
+                        errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.link, size: 48, color: Colors.blue),
+                      )
+                    else
+                      const Icon(Icons.link, size: 48, color: Colors.blue),
+                    const SizedBox(height: 4),
+                    Text(title),
+                  ],
+                ),
+              );
+            }),
+            // AddApps
+            GestureDetector(
+              onTap: onTapAdd,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.add_box, size: 48, color: Colors.grey),
+                  SizedBox(height: 4),
+                  Text('AddApps'),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

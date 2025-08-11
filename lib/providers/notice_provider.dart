@@ -1,158 +1,133 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// お知らせ一覧と未読管理：
-/// - ユーザーの assignedProjects 全件 + 'all' を購読（複数クエリをマージ）
-/// - 既読更新 markAsRead を提供
+/// ユーザ向けお知らせ Provider
+/// - notices（全件を購読してクライアント側で絞り込み）
+/// - users/{uid}/noticeReads を購読して既読管理
+/// - unreadCount を公開
+///
+/// notices/{id}
+///  - title, body, url?
+///  - projectId: string?  // null/空 => 全体周知
+///  - isGlobal: bool      // true => 全体周知
+///  - publishStart: Timestamp?
+///  - publishEnd: Timestamp?
+///  - createdAt: Timestamp
 class NoticeProvider extends ChangeNotifier {
-  bool _loading = false;
-  bool get loading => _loading;
-
   String? _uid;
-  final Set<String> _projectIds = {};
-  Map<String, String> _projectNames = {};
+  List<String> _assigned = [];
 
-  final Map<String, Map<String, dynamic>> _noticeMap = {};
-  final List<StreamSubscription<QuerySnapshot<Map<String, dynamic>>>> _subs = [];
+  bool _binding = false;
+  bool get isBinding => _binding;
 
-  List<Map<String, dynamic>> get notices {
-    final list = _noticeMap.values.toList();
-    list.sort((a, b) {
-      DateTime? da, db;
-      final ta = a['createdAt'], tb = b['createdAt'];
-      if (ta is Timestamp) {
-        da = ta.toDate();
-      } else if (ta is DateTime) {
-        da = ta;
-      }
-      if (tb is Timestamp) {
-        db = tb.toDate();
-      } else if (tb is DateTime) {
-        db = tb;
-      }
-      if (da == null && db == null) return 0;
-      if (da == null) return 1;
-      if (db == null) return -1;
-      return db.compareTo(da);
-    });
-    return list;
-  }
+  final List<Map<String, dynamic>> _all = [];
+  final Set<String> _readIds = {};
 
-  int get unreadCount {
-    final uid = _uid;
-    if (uid == null) return 0;
-    return _noticeMap.values.where((n) {
-      final reads = (n['readUsers'] as List?)?.cast<String>() ?? const <String>[];
-      return !reads.contains(uid);
-    }).length;
-  }
+  List<Map<String, dynamic>> get allNotices => List.unmodifiable(_all);
+  Set<String> get readIds => Set.unmodifiable(_readIds);
 
-  /// タイトル接頭辞（[全体周知] or [PJ名]）
-  String prefixFor(Map<String, dynamic> n) {
-    final dynamic pidDyn = n['projectId'] ?? n['project'];
-    if (pidDyn == null) return '';
-    final pid = pidDyn.toString();
-    if (pid == 'all') return '全体周知';
-    return _projectNames[pid] ?? pid;
-  }
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subNotices;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subReads;
 
-  Future<void> bindForUser({
+  /// Auth 後に呼び出す。複数回呼ばれても同一条件なら再購読しない。
+  Future<void> bind({
     required String uid,
-    required List<String> projectIds,
-    required Map<String, String> projectNames,
+    required List<String> assignedProjectIds,
   }) async {
-    final projects = List<String>.from(projectIds)..sort();
-    final unchanged = _uid == uid &&
-        _projectIds.length == projects.length &&
-        _projectIds.containsAll(projects) &&
-        _mapEquals(_projectNames, projectNames);
-
-    if (unchanged && _subs.isNotEmpty) {
+    // 変更なしなら何もしない
+    if (_uid == uid &&
+        _assigned.length == assignedProjectIds.length &&
+        _assigned.toSet().containsAll(assignedProjectIds)) {
       return;
     }
 
-    // 既存の購読を解除
-    for (final s in _subs) {
-      await s.cancel();
-    }
-    _subs.clear();
-    _noticeMap.clear();
+    // 既存サブスクリプションを止める
+    await _subNotices?.cancel();
+    await _subReads?.cancel();
 
     _uid = uid;
-    _projectIds
-      ..clear()
-      ..addAll(projects);
-    _projectNames = Map<String, String>.from(projectNames);
-
-    _loading = true;
+    _assigned = List<String>.from(assignedProjectIds);
+    _binding = true;
     notifyListeners();
 
-    // 全体周知
-    final allQuery = FirebaseFirestore.instance
+    // notices は createdAt 降順のみで購読（複合インデックス回避）
+    _subNotices = FirebaseFirestore.instance
         .collection('notices')
-        .where('projectId', isEqualTo: 'all');
-    _subs.add(allQuery.snapshots().listen(_applySnapshot, onError: (_) {
-      _loading = false;
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen((qs) {
+      _all
+        ..clear()
+        ..addAll(qs.docs.map((d) => {'id': d.id, ...d.data()}));
+      _binding = false;
       notifyListeners();
-    }));
+    }, onError: (_) {
+      _binding = false;
+      notifyListeners();
+    });
 
-    // 各プロジェクト（projectId / 互換: project）
-    for (final pid in _projectIds) {
-      final q1 = FirebaseFirestore.instance
-          .collection('notices')
-          .where('projectId', isEqualTo: pid);
-      final qAlt = FirebaseFirestore.instance
-          .collection('notices')
-          .where('project', isEqualTo: pid);
-
-      _subs.add(q1.snapshots().listen(_applySnapshot, onError: (_) {}));
-      _subs.add(qAlt.snapshots().listen(_applySnapshot, onError: (_) {}));
-    }
+    // 既読
+    _subReads = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('noticeReads')
+        .snapshots()
+        .listen((qs) {
+      _readIds
+        ..clear()
+        ..addAll(qs.docs.map((d) => d.id));
+      notifyListeners();
+    });
   }
 
-  void _applySnapshot(QuerySnapshot<Map<String, dynamic>> qs) {
-    for (final d in qs.docs) {
-      final m = d.data();
-      m['id'] = d.id;
-      _noticeMap[d.id] = m;
+  /// 表示対象（全体周知 + 自分がアサインされているPJ、公開期間内）
+  List<Map<String, dynamic>> get visibleNotices {
+    final now = DateTime.now();
+
+    bool _within(dynamic start, dynamic end) {
+      DateTime? s;
+      DateTime? e;
+      if (start is Timestamp) s = start.toDate();
+      if (start is DateTime) s = start;
+      if (end is Timestamp) e = end.toDate();
+      if (end is DateTime) e = end;
+      if (s != null && now.isBefore(s)) return false;
+      if (e != null && now.isAfter(e)) return false;
+      return true;
     }
-    _loading = false;
-    notifyListeners();
+
+    return _all.where((n) {
+      final isGlobal = (n['isGlobal'] == true) ||
+          n['projectId'] == null ||
+          (n['projectId'] as String? ?? '').isEmpty;
+      final pid = (n['projectId'] ?? '').toString();
+      if (!_within(n['publishStart'], n['publishEnd'])) return false;
+      if (isGlobal) return true;
+      return _assigned.contains(pid);
+    }).toList();
   }
 
+  /// 未読件数
+  int get unreadCount =>
+      visibleNotices.where((n) => !_readIds.contains(n['id'])).length;
+
+  /// 既読化（一覧/詳細で呼ぶ）
   Future<void> markAsRead(String noticeId) async {
     final uid = _uid;
-    if (uid == null) return;
-    try {
-      await FirebaseFirestore.instance
-          .collection('notices')
-          .doc(noticeId)
-          .update({'readUsers': FieldValue.arrayUnion([uid])});
-      final m = _noticeMap[noticeId];
-      if (m != null) {
-        final list = (m['readUsers'] as List?)?.cast<String>().toList() ?? <String>[];
-        if (!list.contains(uid)) list.add(uid);
-        m['readUsers'] = list;
-        notifyListeners();
-      }
-    } catch (_) {/* noop */}
+    if (uid == null || noticeId.isEmpty) return;
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('noticeReads')
+        .doc(noticeId)
+        .set({'readAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
   }
 
   @override
   void dispose() {
-    for (final s in _subs) {
-      s.cancel();
-    }
+    _subNotices?.cancel();
+    _subReads?.cancel();
     super.dispose();
-  }
-
-  bool _mapEquals(Map<String, String> a, Map<String, String> b) {
-    if (identical(a, b)) return true;
-    if (a.length != b.length) return false;
-    for (final k in a.keys) {
-      if (!b.containsKey(k) || b[k] != a[k]) return false;
-    }
-    return true;
   }
 }

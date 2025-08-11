@@ -1,89 +1,82 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// 認証ユーザーと、そのユーザーに関連する基本データを保持。
-/// アプリ起動時に authStateChanges を購読し、ログイン／ログアウトを一元管理。
 class UserProvider extends ChangeNotifier {
   String? uid;
   String? email;
-  String? role;
+  String? role; // 'admin' | 'user' | null
   List<String> assignedProjects = [];
-  Map<String, String> projectNames = {};
+  Map<String, String> projectNames = {}; // projectId -> projectName
   bool isLoading = true;
 
-  StreamSubscription<User?>? _authSub;
-
-  UserProvider() {
-    // 起動時にAuthを購読：ログイン/ログアウト時の再読込を一本化
-    _authSub = FirebaseAuth.instance.authStateChanges().listen((u) async {
-      if (u == null) {
-        _clear();
-        notifyListeners();
-        return;
-      }
-      await loadUserData(); // ログイン直後に1回だけ
-    });
-  }
-
+  /// サインイン済みユーザーの基本情報 + 参加プロジェクトを読み込み
   Future<void> loadUserData() async {
-    isLoading = true;
-    notifyListeners();
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) {
+      // 未ログインでもハングしないように初期化
+      uid = null;
+      email = null;
+      role = null;
+      assignedProjects = [];
+      projectNames = {};
+      isLoading = false;
+      notifyListeners();
+      return;
+    }
+
+    uid = currentUser.uid;
+    email = currentUser.email;
+
     try {
-      final fb = FirebaseAuth.instance.currentUser;
-      if (fb == null) {
-        _clear();
-        return;
-      }
-
-      uid = fb.uid;
-      email = fb.email;
-
       // users/{uid}
       final userDoc =
       await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
-      role = userDoc.data()?['role'] ?? 'user';
+      if (!userDoc.exists) {
+        role = null;
+        assignedProjects = [];
+        projectNames = {};
+      } else {
+        final data = userDoc.data();
+        role = (data?['role'] ?? 'user').toString();
 
-      // 将来的には membersUid(arrayContains: uid) に移行推奨。
-      final q = await FirebaseFirestore.instance
-          .collection('projects')
-          .where('members', arrayContains: email)
-          .get();
+        // メンバーとして含まれるprojectsを取得（members に email が含まれる）
+        final q = await FirebaseFirestore.instance
+            .collection('projects')
+            .where('members', arrayContains: email)
+            .get();
 
-      assignedProjects = q.docs.map((d) => d.id).toList();
-      projectNames = {
-        for (final d in q.docs) d.id: (d.data()['name'] ?? d.id).toString()
-      };
-    } catch (_) {
-      _clear();
-    } finally {
-      isLoading = false;
-      notifyListeners();
+        assignedProjects = q.docs.map((d) => d.id).toList();
+
+        // projectId -> name のマップ
+        projectNames = {
+          for (final d in q.docs) d.id: (d.data()['name'] ?? d.id).toString(),
+        };
+      }
+    } catch (e) {
+      // 失敗時は空で返す
+      role = null;
+      assignedProjects = [];
+      projectNames = {};
     }
-  }
 
-  String? getProjectName(String id) => projectNames[id];
-
-  Future<void> signOut() async {
-    await FirebaseAuth.instance.signOut();
-    _clear();
+    isLoading = false;
     notifyListeners();
   }
 
-  void _clear() {
+  /// プロジェクトIDからプロジェクト名
+  String? getProjectName(String projectId) => projectNames[projectId];
+
+  /// プロバイダの状態を破棄（ログアウト時に呼ぶ）
+  void logout() {
     uid = null;
     email = null;
     role = null;
     assignedProjects = [];
     projectNames = {};
     isLoading = false;
-  }
-
-  @override
-  void dispose() {
-    _authSub?.cancel();
-    super.dispose();
+    notifyListeners();
   }
 }

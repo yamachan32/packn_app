@@ -36,7 +36,8 @@ class _HomeScreenState extends State<HomeScreen> {
         .get();
 
     final Map<String, String> idNameMap = {
-      for (var doc in snapshot.docs) doc.id: (doc.data()['name'] ?? doc.id).toString()
+      for (var doc in snapshot.docs)
+        doc.id: (doc.data()['name'] ?? doc.id).toString()
     };
 
     setState(() {
@@ -53,17 +54,56 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.pushReplacementNamed(context, '/login');
   }
 
-  Future<void> _launchURL(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('URLを開けません')),
-      );
+  // ---- ここから：URL起動（iOS対応強化版） ----------------------------------------
+
+  /// スキームが無ければ https を補完して Uri を返す（mailto/tel/sms はそのまま）
+  Uri? _normalizeToUri(String raw) {
+    String trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    final hasExplicitScheme =
+        RegExp(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://').hasMatch(trimmed) ||
+            trimmed.startsWith('mailto:') ||
+            trimmed.startsWith('tel:') ||
+            trimmed.startsWith('sms:');
+
+    if (!hasExplicitScheme) {
+      // 例: "www.example.com" → "https://www.example.com"
+      trimmed = 'https://$trimmed';
+    }
+
+    try {
+      return Uri.parse(trimmed);
+    } catch (_) {
+      return null;
     }
   }
+
+  /// まず外部アプリで開き、失敗したら http/https に限りアプリ内ブラウザで再トライ
+  Future<void> _launchURL(String raw) async {
+    final uri = _normalizeToUri(raw);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('URL形式が不正です')));
+      return;
+    }
+
+    // iOS: canLaunchUrl 依存は避け、直接トライが安定
+    bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+
+    // 外部起動に失敗した場合、http/httpsのみ in-app でフォールバック
+    if (!ok && (uri.scheme == 'https' || uri.scheme == 'http')) {
+      ok = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+    }
+
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('URLを開けません: $uri')));
+    }
+  }
+
+  // ---- ここまで：URL起動（iOS対応強化版） ----------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +122,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            // ★ ヘッダーを元の水色に戻す
             const DrawerHeader(
               decoration: BoxDecoration(color: Colors.lightBlueAccent),
               child: Text(
@@ -192,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SizedBox(height: 24),
 
-          // ===== 個人ショートカット（プロジェクト紐づけのみ／フォールバック廃止）
+          // ===== 個人ショートカット（プロジェクト紐づけのみ）
           Row(
             children: [
               const Text('個人設定ショートカット集',
@@ -221,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const Divider(),
           _UserProjectLinksList(
-            key: ValueKey(_selectedProjectId), // ★ プロジェクト切替時に確実にStreamを張り替える
+            key: ValueKey(_selectedProjectId), // プロジェクト切替時に確実にStreamを張り替える
             uid: userProvider.uid!,
             projectId: _selectedProjectId!,
             onOpenUrl: _launchURL,

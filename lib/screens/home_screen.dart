@@ -160,10 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text('# ${_selectedProjectName ?? "未選択"}'),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
-          ),
+
           IconButton(
             icon: const Icon(Icons.notifications),
             onPressed: () {
@@ -172,6 +169,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 MaterialPageRoute(builder: (_) => const NoticeListScreen()),
               );
             },
+          ),
+
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
           ),
         ],
       ),

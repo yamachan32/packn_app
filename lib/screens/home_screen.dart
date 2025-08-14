@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +24,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, String> _projectIdNameMap = {};
   List<String> _lastAssigned = const []; // 直近の一覧を保持して変化検知
 
+  // ▼ 追加：削除/無効ユーザ検知用
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
+  bool _disabledDialogShown = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -33,12 +39,65 @@ class _HomeScreenState extends State<HomeScreen> {
         now.toSet().difference(_lastAssigned.toSet()).isNotEmpty) {
       _refreshProjectNames(now);
     }
+
+    // ▼ 追加：users/{uid} を購読して無効ユーザを検知（モーダルは一度だけ）
+    _bindDisabledWatcher(userProvider.uid);
+  }
+
+  void _bindDisabledWatcher(String? uid) {
+    if (uid == null) return;
+    _userDocSub?.cancel();
+    _userDocSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted || _disabledDialogShown) return;
+      final data = snap.data();
+      final exists = snap.exists;
+      final isDisabled = !exists ||
+          (data?['isActive'] == false) ||
+          (data?['disabled'] == true) ||
+          ((data?['status'] ?? '') == 'deleted') ||
+          (data?['deletedAt'] != null);
+      if (isDisabled) {
+        _showDisabledDialogAndLogout(email: FirebaseAuth.instance.currentUser?.email);
+      }
+    });
+  }
+
+  Future<void> _showDisabledDialogAndLogout({String? email}) async {
+    _disabledDialogShown = true;
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('アカウントをご利用できません'),
+        content: Text(
+          (email == null || email.isEmpty)
+              ? 'このアカウントは削除または無効化されています。管理者にお問い合わせください。'
+              : '$email は削除または無効化されています。管理者にお問い合わせください。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    try {
+      await FirebaseAuth.instance.signOut(); // AuthGate が Login に切替
+    } catch (_) {}
   }
 
   // whereIn 10件制限を回避しつつ名前を再取得
   Future<void> _refreshProjectNames(List<String> assigned) async {
     _lastAssigned = List<String>.from(assigned);
+    if (!mounted) return;
     if (assigned.isEmpty) {
+      if (!mounted) return;
       setState(() {
         _projectIdNameMap = {};
         _selectedProjectId = null;
@@ -56,11 +115,13 @@ class _HomeScreenState extends State<HomeScreen> {
       final slice = assigned.sublist(i, end);
       final snap =
       await projectsCol.where(FieldPath.documentId, whereIn: slice).get();
+      if (!mounted) return;
       for (final doc in snap.docs) {
         idNameMap[doc.id] = (doc.data()['name'] ?? doc.id).toString();
       }
     }
 
+    if (!mounted) return;
     setState(() {
       _projectIdNameMap = idNameMap;
       if (_selectedProjectId == null || !assigned.contains(_selectedProjectId)) {
@@ -74,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
     context.read<UserProvider>().logout();
-    Navigator.pushReplacementNamed(context, '/login');
+    // ここでは画面遷移しない（AuthGate が自動で Login に切替）
   }
 
   /// URL補正
@@ -119,6 +180,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('URLを開けません: $uri')));
     }
+  }
+
+  @override
+  void dispose() {
+    _userDocSub?.cancel(); // 追加：購読解除
+    super.dispose();
   }
 
   @override
@@ -188,7 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _logout();
               },
             ),
-            SafeArea(top: false, child: SizedBox(height: 4)), // 端末下部と干渉しないよう少し余白
+            SafeArea(top: false, child: const SizedBox(height: 4)), // 端末下部と干渉しないよう少し余白
           ],
         ),
       ),

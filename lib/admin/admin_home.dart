@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:packn_app/providers/projects_provider.dart' as pp;
+import '../providers/user_provider.dart';
 
 import 'admin_notice_menu.dart';
 import 'admin_project_menu.dart';
@@ -36,6 +37,12 @@ class _AdminHomeState extends State<AdminHome> {
   @override
   Widget build(BuildContext context) {
     final projects = context.watch<pp.ProjectsProvider>().projects;
+    final assignedProjectIds = context.watch<UserProvider>().assignedProjects;
+
+    // アサインされたプロジェクトだけに絞り込み
+    final filteredProjects = projects
+        .where((p) => assignedProjectIds.contains(p['id']))
+        .toList();
 
     return Scaffold(
       drawer: Drawer(
@@ -63,7 +70,7 @@ class _AdminHomeState extends State<AdminHome> {
                     title: Text('プロジェクトに移動',
                         style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
-                  ...projects.map((p) {
+                  ...filteredProjects.map((p) {
                     final id = (p['id'] ?? '').toString();
                     final name = (p['name'] ?? '').toString();
                     return ListTile(

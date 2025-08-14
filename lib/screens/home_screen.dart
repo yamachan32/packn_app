@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 
 import '../providers/user_provider.dart';
 import '../providers/notice_provider.dart';
@@ -313,48 +314,59 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),
-          const Divider(),
+          const Divider(
+            color: Colors.grey,
+            thickness: 1.2,
+          ),
           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: FirebaseFirestore.instance
                 .collection('projects')
                 .doc(_selectedProjectId)
                 .snapshots(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.data?.data() == null) {
-                return const SizedBox(
-                    height: 100, child: Center(child: CircularProgressIndicator()));
-              }
+              final data = snapshot.data?.data() ?? {};
+              final links = List<Map<String, dynamic>>.from(data['links'] ?? []);
 
-              final data = snapshot.data!.data()!;
-              final links =
-              List<Map<String, dynamic>>.from(data['links'] ?? []);
-
-              if (links.isEmpty) {
-                return const Text('登録されたリンクがありません');
-              }
-
-              return Wrap(
-                spacing: 16,
-                runSpacing: 16,
-                children: links.map((link) {
-                  return GestureDetector(
-                    onTap: () => _launchURL((link['url'] ?? '').toString()),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Image.asset(
-                          'assets/icons/${link['icon']}',
-                          width: 48,
-                          height: 48,
-                          errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.link, size: 48),
-                        ),
-                        const SizedBox(height: 4),
-                        Text((link['label'] ?? '').toString()),
-                      ],
+              return Column(
+                children: [
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: links.length,
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: 1,
                     ),
-                  );
-                }).toList(),
+                    itemBuilder: (_, index) {
+                      final link = links[index];
+                      return GestureDetector(
+                        onTap: () => _launchURL((link['url'] ?? '').toString()),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            Expanded(
+                              child: Image.asset(
+                                'assets/icons/${link['icon']}',
+                                width: 48,
+                                height: 48,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.link, size: 48),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            AutoSizeText(
+                              (link['label'] ?? '').toString(),
+                              maxLines: 1,
+                              minFontSize: 8,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
               );
             },
           ),
@@ -385,7 +397,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          const Divider(),
+          const Divider(
+            color: Colors.grey,
+            thickness: 1.2,
+          ),
           _UserProjectLinksList(
             key: ValueKey(_selectedProjectId),
             uid: userProvider.uid!,
@@ -436,12 +451,19 @@ class _UserProjectLinksList extends StatelessWidget {
       stream: query.snapshots(),
       builder: (context, snap) {
         final docs = snap.data?.docs ?? [];
-        return Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: [
-            ...docs.map((doc) {
-              final data = doc.data();
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: docs.length + 1,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: 1,
+          ),
+          itemBuilder: (_, index) {
+            if (index < docs.length) {
+              final data = docs[index].data();
               final iconFile = (data['icon'] ?? '').toString();
               final title = (data['title'] ?? '').toString();
               final url = (data['url'] ?? '').toString();
@@ -465,40 +487,56 @@ class _UserProjectLinksList extends StatelessWidget {
                     ),
                   );
                   if (ok == true) {
-                    await doc.reference.delete();
+                    await docs[index].reference.delete();
                   }
                 },
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize: MainAxisSize.max,
                   children: [
-                    if (iconFile.isNotEmpty)
-                      Image.asset(
+                    Expanded(
+                      child: iconFile.isNotEmpty
+                          ? Image.asset(
                         'assets/icons/$iconFile',
                         width: 48,
                         height: 48,
                         errorBuilder: (_, __, ___) =>
                         const Icon(Icons.link, size: 48, color: Colors.blue),
                       )
-                    else
-                      const Icon(Icons.link, size: 48, color: Colors.blue),
+                          : const Icon(Icons.link, size: 48, color: Colors.blue),
+                    ),
                     const SizedBox(height: 4),
-                    Text(title),
+                    AutoSizeText(
+                      title,
+                      maxLines: 1,
+                      minFontSize: 8,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               );
-            }),
-            GestureDetector(
-              onTap: onTapAdd,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.add_box, size: 48, color: Colors.grey),
-                  SizedBox(height: 4),
-                  Text('AddApps'),
-                ],
-              ),
-            ),
-          ],
+            } else {
+              // AddAppsボタン
+              return GestureDetector(
+                onTap: onTapAdd,
+                child: Column(
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    Expanded(
+                      child: Icon(Icons.add_box, size: 48, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 4),
+                    const AutoSizeText(
+                      'AddApps',
+                      maxLines: 1,
+                      minFontSize: 8,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              );
+            }
+          },
         );
       },
     );

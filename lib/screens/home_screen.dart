@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/user_provider.dart';
+import '../providers/notice_provider.dart';
 import '../admin/admin_home.dart';
 import '../screens/notice_list_screen.dart';
 
@@ -19,31 +20,53 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedProjectId;
   String? _selectedProjectName;
   Map<String, String> _projectIdNameMap = {};
+  List<String> _lastAssigned = const []; // 直近の一覧を保持して変化検知
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final userProvider = Provider.of<UserProvider>(context);
-    if (userProvider.assignedProjects.isNotEmpty && _selectedProjectId == null) {
-      _fetchProjectNames(userProvider);
+    final now = List<String>.from(userProvider.assignedProjects);
+    // 初回 or 変化（件数 or 中身）があれば再フェッチ
+    if (_selectedProjectId == null ||
+        now.length != _lastAssigned.length ||
+        now.toSet().difference(_lastAssigned.toSet()).isNotEmpty) {
+      _refreshProjectNames(now);
     }
   }
 
-  Future<void> _fetchProjectNames(UserProvider userProvider) async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('projects')
-        .where(FieldPath.documentId, whereIn: userProvider.assignedProjects)
-        .get();
+  // whereIn 10件制限を回避しつつ名前を再取得
+  Future<void> _refreshProjectNames(List<String> assigned) async {
+    _lastAssigned = List<String>.from(assigned);
+    if (assigned.isEmpty) {
+      setState(() {
+        _projectIdNameMap = {};
+        _selectedProjectId = null;
+        _selectedProjectName = null;
+      });
+      return;
+    }
 
-    final Map<String, String> idNameMap = {
-      for (var doc in snapshot.docs)
-        doc.id: (doc.data()['name'] ?? doc.id).toString()
-    };
+    final projectsCol = FirebaseFirestore.instance.collection('projects');
+    final Map<String, String> idNameMap = {};
+
+    const chunk = 10;
+    for (var i = 0; i < assigned.length; i += chunk) {
+      final end = (i + chunk < assigned.length) ? (i + chunk) : assigned.length;
+      final slice = assigned.sublist(i, end);
+      final snap =
+      await projectsCol.where(FieldPath.documentId, whereIn: slice).get();
+      for (final doc in snap.docs) {
+        idNameMap[doc.id] = (doc.data()['name'] ?? doc.id).toString();
+      }
+    }
 
     setState(() {
       _projectIdNameMap = idNameMap;
-      _selectedProjectId = userProvider.assignedProjects.first;
-      _selectedProjectName = idNameMap[_selectedProjectId];
+      if (_selectedProjectId == null || !assigned.contains(_selectedProjectId)) {
+        _selectedProjectId = assigned.first;
+      }
+      _selectedProjectName = idNameMap[_selectedProjectId] ?? _selectedProjectId;
     });
   }
 
@@ -54,9 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.pushReplacementNamed(context, '/login');
   }
 
-  // ---- ここから：URL起動（iOS対応強化版） ----------------------------------------
-
-  /// スキームが無ければ https を補完して Uri を返す（mailto/tel/sms はそのまま）
+  /// URL補正
   Uri? _normalizeToUri(String raw) {
     String trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
@@ -68,7 +89,6 @@ class _HomeScreenState extends State<HomeScreen> {
             trimmed.startsWith('sms:');
 
     if (!hasExplicitScheme) {
-      // 例: "www.example.com" → "https://www.example.com"
       trimmed = 'https://$trimmed';
     }
 
@@ -79,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// まず外部アプリで開き、失敗したら http/https に限りアプリ内ブラウザで再トライ
+  /// URL起動
   Future<void> _launchURL(String raw) async {
     final uri = _normalizeToUri(raw);
     if (uri == null) {
@@ -89,10 +109,8 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // iOS: canLaunchUrl 依存は避け、直接トライが安定
     bool ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
 
-    // 外部起動に失敗した場合、http/httpsのみ in-app でフォールバック
     if (!ok && (uri.scheme == 'https' || uri.scheme == 'http')) {
       ok = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
     }
@@ -103,11 +121,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ---- ここまで：URL起動（iOS対応強化版） ----------------------------------------
-
   @override
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context);
+    final unread = context.watch<NoticeProvider>().unreadCount;
 
     if (userProvider.isLoading || _selectedProjectId == null) {
       return const Scaffold(
@@ -119,31 +136,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        child: Column(
           children: [
             const DrawerHeader(
               decoration: BoxDecoration(color: Colors.lightBlueAccent),
-              child: Text(
-                'プロジェクト選択',
-                style: TextStyle(fontSize: 18, color: Colors.white),
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Text(
+                  'プロジェクト選択',
+                  style: TextStyle(fontSize: 18, color: Colors.white),
+                ),
               ),
             ),
-            ...assigned.map((id) => ListTile(
-              title: Text(_projectIdNameMap[id] ?? id),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() {
-                  _selectedProjectId = id;
-                  _selectedProjectName = _projectIdNameMap[id];
-                });
-              },
-            )),
-            const Divider(),
+            // 上部はスクロール領域
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ...assigned.map((id) => ListTile(
+                    title: Text(_projectIdNameMap[id] ?? id),
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _selectedProjectId = id;
+                        _selectedProjectName = _projectIdNameMap[id];
+                      });
+                    },
+                  )),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            // ↓↓↓ フッタ固定エリア：管理者メニュー → ログアウト の順に配置 ↓↓↓
             if (userProvider.role == 'admin')
               ListTile(
-                title: const Text('管理者メニュー'),
                 leading: const Icon(Icons.admin_panel_settings),
+                title: const Text('管理者メニュー'),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(
@@ -152,6 +180,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 },
               ),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('ログアウト'),
+              onTap: () {
+                Navigator.pop(context); // 先にドロワーを閉じると体験が良い
+                _logout();
+              },
+            ),
+            SafeArea(top: false, child: SizedBox(height: 4)), // 端末下部と干渉しないよう少し余白
           ],
         ),
       ),
@@ -160,27 +197,49 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text('# ${_selectedProjectName ?? "未選択"}'),
         centerTitle: true,
         actions: [
-
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const NoticeListScreen()),
-              );
-            },
-          ),
-
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                tooltip: unread > 0 ? 'お知らせ（未読 $unread 件）' : 'お知らせ',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const NoticeListScreen()),
+                  );
+                },
+              ),
+              if (unread > 0)
+                Positioned(
+                  right: 10,
+                  top: 10,
+                  child: Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    constraints: const BoxConstraints(minWidth: 18),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      unread > 99 ? '99+' : '$unread',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // ===== プロジェクトショートカット（共通）
           Row(
             children: const [
               Text('プロジェクトショートカット集',
@@ -200,7 +259,8 @@ class _HomeScreenState extends State<HomeScreen> {
               }
 
               final data = snapshot.data!.data()!;
-              final links = List<Map<String, dynamic>>.from(data['links'] ?? []);
+              final links =
+              List<Map<String, dynamic>>.from(data['links'] ?? []);
 
               if (links.isEmpty) {
                 return const Text('登録されたリンクがありません');
@@ -219,7 +279,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           'assets/icons/${link['icon']}',
                           width: 48,
                           height: 48,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.link, size: 48),
+                          errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.link, size: 48),
                         ),
                         const SizedBox(height: 4),
                         Text((link['label'] ?? '').toString()),
@@ -230,10 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-
           const SizedBox(height: 24),
-
-          // ===== 個人ショートカット（プロジェクト紐づけのみ）
           Row(
             children: [
               const Text('個人設定ショートカット集',
@@ -262,7 +320,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const Divider(),
           _UserProjectLinksList(
-            key: ValueKey(_selectedProjectId), // プロジェクト切替時に確実にStreamを張り替える
+            key: ValueKey(_selectedProjectId),
             uid: userProvider.uid!,
             projectId: _selectedProjectId!,
             onOpenUrl: _launchURL,
@@ -283,7 +341,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// 個人ショートカット（プロジェクト配下のみを表示）
 class _UserProjectLinksList extends StatelessWidget {
   final String uid;
   final String projectId;
@@ -363,7 +420,6 @@ class _UserProjectLinksList extends StatelessWidget {
                 ),
               );
             }),
-            // AddApps
             GestureDetector(
               onTap: onTapAdd,
               child: Column(

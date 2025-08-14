@@ -151,29 +151,40 @@ class _EditorBody extends StatelessWidget {
                       Divider(height: 1, color: Colors.grey.shade300),
                   itemBuilder: (_, i) {
                     final row = form.links[i];
-                    final icon = row['icon'] ?? '';
-                    final label = row['label'] ?? '';
-                    final url = row['url'] ?? '';
+                    final icon = (row['icon'] ?? '').toString();
+                    final label = (row['label'] ?? '').toString();
+                    final url = (row['url'] ?? '').toString();
 
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(horizontal: 0),
                       leading: icon.isNotEmpty
-                          ? Image.asset('assets/icons/$icon', width: 36, height: 36,
-                          errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.link, size: 36))
+                          ? Image.asset(
+                        'assets/icons/$icon',
+                        width: 36,
+                        height: 36,
+                        errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.link, size: 36),
+                      )
                           : const Icon(Icons.link, size: 36),
                       title: Text(label),
                       subtitle: Text(url),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // ←← 修正ポイント：initial を渡して編集モードで開く
                           IconButton(
                             tooltip: '編集',
                             icon: const Icon(Icons.edit_outlined),
                             onPressed: () async {
                               final result = await showDialog<Map<String, String>>(
                                 context: context,
-                                builder: (_) => const AdminLinkAdd(),
+                                builder: (_) => AdminLinkAdd(
+                                  initial: {
+                                    'label': label,
+                                    'url': url,
+                                    'icon': icon,
+                                  },
+                                ),
                               );
                               if (!context.mounted) return;
                               if (result != null) form.replaceLink(i, result);

@@ -35,16 +35,16 @@ class NoticeListScreen extends StatelessWidget {
     final np = context.watch<NoticeProvider>();
     final up = context.watch<UserProvider>();
 
-    // 表示対象を取得して、publishStart(なければcreatedAt)の降順にソート
+    // ▼ 並び順を createdAt の新しい順（降順、上が最新）に統一
     final items = [...np.visibleNotices]..sort((a, b) {
       DateTime _to(dynamic v) {
         if (v is Timestamp) return v.toDate();
         if (v is DateTime) return v;
         return DateTime.fromMillisecondsSinceEpoch(0);
       }
-      final da = _to(a['publishStart'] ?? a['createdAt']);
-      final db = _to(b['publishStart'] ?? b['createdAt']);
-      return db.compareTo(da);
+      final da = _to(a['createdAt']);
+      final db = _to(b['createdAt']);
+      return db.compareTo(da); // 新しい → 古い
     });
 
     return Scaffold(
@@ -52,6 +52,16 @@ class NoticeListScreen extends StatelessWidget {
         backgroundColor: Colors.blue,
         title: const Text('お知らせ一覧'),
         centerTitle: true,
+        actions: [
+          // ホームへ戻る
+          IconButton(
+            icon: const Icon(Icons.home),
+            tooltip: 'ホームへ',
+            onPressed: () {
+              Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false);
+            },
+          ),
+        ],
       ),
       body: items.isEmpty
           ? const Center(child: Text('お知らせはありません'))
@@ -71,7 +81,10 @@ class NoticeListScreen extends StatelessWidget {
                 final id = (n['id'] ?? '').toString();
                 final title = (n['title'] ?? '').toString();
                 final prefix = _prefixFor(n, up);
-                final published = n['publishStart'] ?? n['createdAt'];
+
+                // 表示日付も createdAt を採用（並びと一致）
+                final createdAt = n['createdAt'];
+
                 final unread = !np.readIds.contains(id);
 
                 final style = TextStyle(
@@ -85,8 +98,7 @@ class NoticeListScreen extends StatelessWidget {
                   title: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 日付（左詰）
-                      Text(_fmtYmdHm(published),
+                      Text(_fmtYmdHm(createdAt),
                           style: const TextStyle(
                               fontSize: 12, color: Colors.black54)),
                       const SizedBox(height: 2),

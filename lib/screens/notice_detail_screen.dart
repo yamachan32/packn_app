@@ -44,6 +44,16 @@ class NoticeDetailScreen extends StatelessWidget {
         backgroundColor: Colors.blue,
         title: const Text('お知らせ'),
         centerTitle: true,
+        actions: [
+          // ★ 追加：ホームへ戻る
+          IconButton(
+            icon: const Icon(Icons.home),
+            tooltip: 'ホームへ',
+            onPressed: () {
+              Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false);
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -142,7 +152,6 @@ class _LinkifiedTextState extends State<LinkifiedText> {
   Future<void> _open(String url) async {
     final cleaned = _cleanUrl(url);
     try {
-      // canLaunchUrl は端末によって false を返すケースがあるため直接 launchUrl を試す
       final ok = await launchUrl(
         Uri.parse(cleaned),
         mode: LaunchMode.externalApplication,

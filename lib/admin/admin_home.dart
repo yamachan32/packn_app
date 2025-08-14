@@ -39,8 +39,7 @@ class _AdminHomeState extends State<AdminHome> {
 
     return Scaffold(
       drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        child: Column(
           children: [
             // ヘッダー：薄い黄色
             DrawerHeader(
@@ -54,41 +53,56 @@ class _AdminHomeState extends State<AdminHome> {
               ),
             ),
 
-            // プロジェクトへ移動（ユーザホーム）
-            const ListTile(
-              title: Text('プロジェクトに移動', style: TextStyle(fontWeight: FontWeight.bold)),
+            // メニューリストはスクロール可能に
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  // プロジェクトへ移動（ユーザホーム）
+                  const ListTile(
+                    title: Text('プロジェクトに移動',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  ...projects.map((p) {
+                    final id = (p['id'] ?? '').toString();
+                    final name = (p['name'] ?? '').toString();
+                    return ListTile(
+                      leading: const Icon(Icons.folder_open),
+                      title: Text(name.isEmpty ? id : name),
+                      onTap: () {
+                        Navigator.pop(context); // Drawer を閉じる
+                        Navigator.pushNamed(context, '/home',
+                            arguments: {'projectId': id});
+                      },
+                    );
+                  }),
+
+                  const Divider(),
+                ],
+              ),
             ),
-            ...projects.map((p) {
-              final id = (p['id'] ?? '').toString();
-              final name = (p['name'] ?? '').toString();
-              return ListTile(
-                leading: const Icon(Icons.folder_open),
-                title: Text(name.isEmpty ? id : name),
+
+            // フッタ固定のログアウト
+            SafeArea(
+              top: false,
+              child: ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('ログアウト'),
                 onTap: () {
-                  Navigator.pop(context); // Drawer を閉じる
-                  // ユーザホームへ。選択したPJを arguments で渡す
-                  Navigator.pushNamed(context, '/home', arguments: {'projectId': id});
+                  Navigator.pop(context);
+                  _logout();
                 },
-              );
-            }),
-
-            const Divider(),
-
-            // ★ 管理メニューは左メニューに出さない（ここには置かない）
+              ),
+            ),
           ],
         ),
       ),
       appBar: AppBar(
         backgroundColor: Colors.amber,
-        title: const Text('管理者ホーム', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('管理者ホーム',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: 'ログアウト',
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
-          ),
-        ],
+        // ログアウトアイコンはヘッダに表示しない
       ),
       body: Center(
         child: FractionallySizedBox(
@@ -97,7 +111,8 @@ class _AdminHomeState extends State<AdminHome> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 16),
-              const Text('管理メニュー', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+              const Text('管理メニュー',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
               Row(
                 children: [
                   Container(width: 60, height: 4, color: Colors.amber),
@@ -106,7 +121,6 @@ class _AdminHomeState extends State<AdminHome> {
               ),
               const SizedBox(height: 16),
 
-              // ★ ボディにボタンを並べる
               _menuButton(
                 context,
                 label: 'アカウント管理',
@@ -137,8 +151,6 @@ class _AdminHomeState extends State<AdminHome> {
                   MaterialPageRoute(builder: (_) => const AdminNoticeMenu()),
                 ),
               ),
-
-              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -162,7 +174,8 @@ class _AdminHomeState extends State<AdminHome> {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.amber,
           foregroundColor: Colors.black,
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          textStyle:
+          const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
       ),
     );

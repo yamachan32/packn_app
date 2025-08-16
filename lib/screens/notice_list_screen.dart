@@ -75,7 +75,7 @@ class NoticeListScreen extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               itemCount: items.length,
               separatorBuilder: (_, __) =>
-                  Divider(height: 1, color: Colors.grey.shade300),
+                  Divider(height: 1, thickness: 1, color: Colors.grey.shade300),
               itemBuilder: (_, i) {
                 final n = items[i];
                 final id = (n['id'] ?? '').toString();
@@ -98,11 +98,13 @@ class NoticeListScreen extends StatelessWidget {
                   title: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const SizedBox(height: 6),
                       Text(_fmtYmdHm(createdAt),
                           style: const TextStyle(
                               fontSize: 12, color: Colors.black54)),
                       const SizedBox(height: 2),
                       Text('[$prefix] $title', style: style),
+                      const SizedBox(height: 6),
                     ],
                   ),
                   onTap: () async {

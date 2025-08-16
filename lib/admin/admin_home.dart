@@ -49,17 +49,21 @@ class _AdminHomeState extends State<AdminHome> {
         child: Column(
           children: [
             // ヘッダー：薄い黄色
-            DrawerHeader(
-              decoration: BoxDecoration(color: Colors.amber.shade100),
-              child: const Align(
-                alignment: Alignment.bottomLeft,
-                child: Text(
-                  '管理メニュー',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Container(
+              color: Colors.amber.shade100,
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  height: kToolbarHeight,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: const Text(
+                    '管理者メニュー',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ),
-
             // メニューリストはスクロール可能に
             Expanded(
               child: ListView(

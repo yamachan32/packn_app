@@ -206,13 +206,18 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: Drawer(
         child: Column(
           children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.lightBlueAccent),
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Text(
-                  'プロジェクト選択',
-                  style: TextStyle(fontSize: 18, color: Colors.white),
+            Container(
+              color: Theme.of(context).primaryColor,
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  height: kToolbarHeight,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: const Text(
+                    'プロジェクト選択',
+                    style: TextStyle(fontSize: 18, color: Colors.white),
+                  ),
                 ),
               ),
             ),
@@ -314,10 +319,25 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),
-          const Divider(
-            color: Colors.grey,
-            thickness: 1.2,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 2,
+                  color: Color(0xFF2196F3),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: Colors.grey.shade300,
+                  ),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(height: 8),
           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: FirebaseFirestore.instance
                 .collection('projects')
@@ -326,7 +346,6 @@ class _HomeScreenState extends State<HomeScreen> {
             builder: (context, snapshot) {
               final data = snapshot.data?.data() ?? {};
               final links = List<Map<String, dynamic>>.from(data['links'] ?? []);
-
               return Column(
                 children: [
                   GridView.builder(
@@ -335,8 +354,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     itemCount: links.length,
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 4,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
                       childAspectRatio: 1,
                     ),
                     itemBuilder: (_, index) {
@@ -344,19 +363,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       return GestureDetector(
                         onTap: () => _launchURL((link['url'] ?? '').toString()),
                         child: Column(
-                          mainAxisSize: MainAxisSize.max,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Expanded(
+                            SizedBox(
+                              width: 48,
+                              height: 48,
                               child: Image.asset(
                                 'assets/icons/${link['icon']}',
-                                width: 48,
-                                height: 48,
                                 errorBuilder: (_, __, ___) => const Icon(Icons.link, size: 48),
                               ),
                             ),
                             const SizedBox(height: 4),
                             AutoSizeText(
-                              (link['label'] ?? '').toString(),
+                              link['label'] ?? '',
                               maxLines: 1,
                               minFontSize: 8,
                               overflow: TextOverflow.ellipsis,
@@ -370,12 +389,10 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-          const SizedBox(height: 24),
           Row(
             children: [
               const Text('個人設定ショートカット集',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(width: 4),
               GestureDetector(
                 onTap: () {
                   showDialog(
@@ -397,10 +414,26 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          const Divider(
-            color: Colors.grey,
-            thickness: 1.2,
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 2,
+                  color: Color(0xFF2196F3),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: Colors.grey.shade300,
+                  ),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(height: 8),
           _UserProjectLinksList(
             key: ValueKey(_selectedProjectId),
             uid: userProvider.uid!,
@@ -457,8 +490,8 @@ class _UserProjectLinksList extends StatelessWidget {
           itemCount: docs.length + 1,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 4,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
             childAspectRatio: 1,
           ),
           itemBuilder: (_, index) {
@@ -491,16 +524,15 @@ class _UserProjectLinksList extends StatelessWidget {
                   }
                 },
                 child: Column(
-                  mainAxisSize: MainAxisSize.max,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
+                    SizedBox(
+                      width: 48,
+                      height: 48,
                       child: iconFile.isNotEmpty
                           ? Image.asset(
                         'assets/icons/$iconFile',
-                        width: 48,
-                        height: 48,
-                        errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.link, size: 48, color: Colors.blue),
+                        errorBuilder: (_, __, ___) => const Icon(Icons.link, size: 48, color: Colors.blue),
                       )
                           : const Icon(Icons.link, size: 48, color: Colors.blue),
                     ),
@@ -519,12 +551,14 @@ class _UserProjectLinksList extends StatelessWidget {
               return GestureDetector(
                 onTap: onTapAdd,
                 child: Column(
-                  mainAxisSize: MainAxisSize.max,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
+                    SizedBox(
+                      width: 48,
+                      height: 48,
                       child: Icon(Icons.add_box, size: 48, color: Colors.grey),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     const AutoSizeText(
                       'AddApps',
                       maxLines: 1,

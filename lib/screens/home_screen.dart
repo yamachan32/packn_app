@@ -25,6 +25,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, String> _projectIdNameMap = {};
   List<String> _lastAssigned = const []; // 直近の一覧を保持して変化検知
 
+  // ▼ 追加：/home の引数で渡された初期選択PJ（1回だけ使う）
+  String? _routeProjectId;
+  bool _routeChecked = false;
+
   // ▼ 追加：削除/無効ユーザ検知用
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
   bool _disabledDialogShown = false;
@@ -32,6 +36,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
+    // ▼ 追加：/home の arguments から projectId を一度だけ回収
+    if (!_routeChecked) {
+      _routeChecked = true;
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map && args['projectId'] is String) {
+        _routeProjectId = args['projectId'] as String;
+      }
+    }
+
     final userProvider = Provider.of<UserProvider>(context);
     final now = List<String>.from(userProvider.assignedProjects);
     // 初回 or 変化（件数 or 中身）があれば再フェッチ
@@ -125,10 +139,22 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     setState(() {
       _projectIdNameMap = idNameMap;
-      if (_selectedProjectId == null || !assigned.contains(_selectedProjectId)) {
-        _selectedProjectId = assigned.first;
+
+      // ▼ 重要：/home 引数の projectId を優先採用（自分がアサインされている場合のみ）
+      String? nextId;
+      if (_routeProjectId != null && assigned.contains(_routeProjectId)) {
+        nextId = _routeProjectId;
+      } else if (_selectedProjectId != null && assigned.contains(_selectedProjectId)) {
+        nextId = _selectedProjectId; // 既存選択を維持
+      } else {
+        nextId = assigned.first; // フォールバック
       }
+
+      _selectedProjectId = nextId;
       _selectedProjectName = idNameMap[_selectedProjectId] ?? _selectedProjectId;
+
+      // 一度使ったらクリア（次回以降は通常ロジック）
+      _routeProjectId = null;
     });
   }
 
@@ -288,8 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   right: 10,
                   top: 10,
                   child: Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                     constraints: const BoxConstraints(minWidth: 18),
                     decoration: BoxDecoration(
                       color: Colors.redAccent,
@@ -326,7 +351,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Container(
                   width: 40,
                   height: 2,
-                  color: Color(0xFF2196F3),
+                  color: const Color(0xFF2196F3),
                 ),
                 Expanded(
                   child: Container(
@@ -422,7 +447,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Container(
                   width: 40,
                   height: 2,
-                  color: Color(0xFF2196F3),
+                  color: const Color(0xFF2196F3),
                 ),
                 Expanded(
                   child: Container(
@@ -532,7 +557,8 @@ class _UserProjectLinksList extends StatelessWidget {
                       child: iconFile.isNotEmpty
                           ? Image.asset(
                         'assets/icons/$iconFile',
-                        errorBuilder: (_, __, ___) => const Icon(Icons.link, size: 48, color: Colors.blue),
+                        errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.link, size: 48, color: Colors.blue),
                       )
                           : const Icon(Icons.link, size: 48, color: Colors.blue),
                     ),
@@ -552,14 +578,14 @@ class _UserProjectLinksList extends StatelessWidget {
                 onTap: onTapAdd,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
+                  children: const [
                     SizedBox(
                       width: 48,
                       height: 48,
                       child: Icon(Icons.add_box, size: 48, color: Colors.grey),
                     ),
-                    const SizedBox(height: 8),
-                    const AutoSizeText(
+                    SizedBox(height: 8),
+                    AutoSizeText(
                       'AddApps',
                       maxLines: 1,
                       minFontSize: 8,

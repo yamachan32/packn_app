@@ -1,3 +1,4 @@
+// lib/screens/home_screen.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,9 @@ import '../providers/user_provider.dart';
 import '../providers/notice_provider.dart';
 import '../admin/admin_home.dart';
 import '../screens/notice_list_screen.dart';
+
+// ★ 追加：共通サインアウト
+import '../utils/app_signout.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -32,6 +36,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // ▼ 追加：削除/無効ユーザ検知用
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
   bool _disabledDialogShown = false;
+
+  // ★ 追加：二重押し/競合防止
+  bool _isSigningOut = false;
 
   @override
   void didChangeDependencies() {
@@ -159,10 +166,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _logout() async {
-    await FirebaseAuth.instance.signOut();
-    if (!mounted) return;
-    context.read<UserProvider>().logout();
-    // ここでは画面遷移しない（AuthGate が自動で Login に切替）
+    if (_isSigningOut) return; // ★ 二重押しガード
+    _isSigningOut = true;
+
+    // Home 独自の購読は先に停止（競合回避）
+    _userDocSub?.cancel();
+    _userDocSub = null;
+
+    try {
+      // ★ 差し替え：共通サインアウト関数
+      await appSignOut(context);
+    } finally {
+      _isSigningOut = false;
+    }
   }
 
   /// URL補正

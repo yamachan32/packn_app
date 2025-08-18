@@ -1,3 +1,4 @@
+// lib/admin/admin_home.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,6 +9,9 @@ import '../providers/user_provider.dart';
 import 'admin_notice_menu.dart';
 import 'admin_project_menu.dart';
 import 'admin_account_menu.dart';
+
+// ★ 追加：共通サインアウト
+import '../utils/app_signout.dart';
 
 class AdminHome extends StatefulWidget {
   const AdminHome({super.key});
@@ -29,9 +33,8 @@ class _AdminHomeState extends State<AdminHome> {
   }
 
   Future<void> _logout() async {
-    await FirebaseAuth.instance.signOut();
-    if (!mounted) return;
-    Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+    // ★ 差し替え：購読停止→signOut→/login を共通関数で実行
+    await appSignOut(context);
   }
 
   @override
